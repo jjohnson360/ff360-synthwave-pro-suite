@@ -1,185 +1,165 @@
-#if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 #include "PluginEditor.h"
 
+#if __has_include(<juce_audio_processors/juce_audio_processors.h>)
+
 NightDriveEditor::NightDriveEditor(NightDriveProcessor& p)
-    : AudioProcessorEditor(&p), m_processor(p),
-      m_heroPanel("EVOLUTION MACRO"),
-      m_layersPanel("AMBIENT LAYERS & SCALE"),
-      m_masterPanel("OUTPUT / METERING"),
-      m_evolveHeroKnob("EVOLVE", "%") {
+    : AudioProcessorEditor(&p), m_processor(p)
+{
     setLookAndFeel(&m_lookAndFeel);
 
-    m_presetBox.setTextWhenNothingSelected("Select Preset...");
-    for (int i = 0; i < m_processor.getNumPrograms(); ++i) {
-        m_presetBox.addItem(m_processor.getProgramName(i), i + 1);
-    }
-    m_presetBox.setSelectedId(m_processor.getCurrentProgram() + 1, juce::dontSendNotification);
-    m_presetBox.onChange = [this]() {
-        m_processor.setCurrentProgram(m_presetBox.getSelectedId() - 1);
-    };
-    addAndMakeVisible(m_presetBox);
+    addAndMakeVisible(m_mainPanel);
+    addAndMakeVisible(m_scene);
 
-    addAndMakeVisible(m_heroPanel);
-    addAndMakeVisible(m_layersPanel);
-    addAndMakeVisible(m_masterPanel);
+    createFader("dronelevel", "DRONE");
+    createFader("granularlevel", "GRANULAR");
+    createFader("arplevel", "ARP");
+    createFader("density", "DENSITY");
+    createFader("filtermove", "FILTER");
+    createFader("reverbwash", "REVERB");
 
-    // Hero Knob
-    if (auto* param = m_processor.getApvts().getRawParameterValue("evolve")) {
-        m_evolveHeroKnob.setValue(param->load() * 0.01f, juce::dontSendNotification);
-    }
-    m_evolveHeroKnob.onValueChanged = [this](float val) {
-        if (auto* param = m_processor.getApvts().getParameter("evolve")) {
-            param->setValueNotifyingHost(val);
-        }
-    };
-    m_heroPanel.addAndMakeVisible(m_evolveHeroKnob);
+    // Evolve horizontal slider
+    m_evolveSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    m_evolveSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    m_evolveSlider.setColour(juce::Slider::thumbColourId, juce::Colour(ff360_ui::Colors::AccessibleSky));
+    m_evolveAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        m_processor.getApvts(), "evolve", m_evolveSlider);
+    
+    m_evolveLabel.setText("EVOLUTION", juce::dontSendNotification);
+    m_evolveLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    m_evolveLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
+    
+    m_evolveValueLabel.setText("50%", juce::dontSendNotification);
+    m_evolveValueLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    m_evolveValueLabel.setJustificationType(juce::Justification::centredRight);
+    
+    addAndMakeVisible(m_evolveSlider);
+    addAndMakeVisible(m_evolveLabel);
+    addAndMakeVisible(m_evolveValueLabel);
 
-    // Scale Box
-    static const juce::StringArray scaleNames = {
-        "Major", "Natural Minor", "Dorian", "Phrygian",
-        "Lydian", "Mixolydian", "Synthwave Pentatonic", "ChordFlow (Auto)"
-    };
-    for (int i = 0; i < scaleNames.size(); ++i) {
-        m_scaleBox.addItem(scaleNames[i], i + 1);
-    }
+    // Mix horizontal slider
+    m_mixSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    m_mixSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    m_mixSlider.setColour(juce::Slider::thumbColourId, juce::Colour(ff360_ui::Colors::MetallicGold));
+    m_mixAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        m_processor.getApvts(), "mix", m_mixSlider);
+    
+    m_mixLabel.setText("MIX", juce::dontSendNotification);
+    m_mixLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    m_mixLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
+    
+    m_mixValueLabel.setText("100%", juce::dontSendNotification);
+    m_mixValueLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    m_mixValueLabel.setJustificationType(juce::Justification::centredRight);
+    
+    addAndMakeVisible(m_mixSlider);
+    addAndMakeVisible(m_mixLabel);
+    addAndMakeVisible(m_mixValueLabel);
+
+    // Scale Lock
+    m_scaleBox.addItem("Major", 1);
+    m_scaleBox.addItem("Natural Minor", 2);
+    m_scaleBox.addItem("Dorian", 3);
+    m_scaleBox.addItem("Phrygian", 4);
+    m_scaleBox.addItem("Lydian", 5);
+    m_scaleBox.addItem("Mixolydian", 6);
+    m_scaleBox.addItem("Synthwave Pentatonic", 7);
+    m_scaleBox.addItem("ChordFlow (Auto)", 8);
+    m_scaleBox.setJustificationType(juce::Justification::centred);
     m_scaleAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
         m_processor.getApvts(), "scalelock", m_scaleBox);
-    m_layersPanel.addAndMakeVisible(m_scaleBox);
+    addAndMakeVisible(m_scaleBox);
 
-    // ChordFlow status readout
-    m_chordFlowStatus.setText("ChordFlow: Standalone (Fallback)", juce::dontSendNotification);
-    m_chordFlowStatus.setFont(juce::Font(9.5f, juce::Font::plain));
-    m_chordFlowStatus.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
-    m_layersPanel.addAndMakeVisible(m_chordFlowStatus);
-
-    // Knobs
-    createKnob("dronelevel", "DRONE");
-    createKnob("granularlevel", "GRANULAR");
-    createKnob("arplevel", "ARP MOTION");
-    createKnob("density", "DENSITY");
-    createKnob("filtermove", "FILTER LFO");
-    createKnob("reverbwash", "REVERB WASH");
-    createKnob("mix", "MIX");
-
-    m_masterPanel.addAndMakeVisible(m_meterView);
-
-    setSize(920, 520);
-    startTimerHz(30);
+    setSize(350, 640);
 }
 
 NightDriveEditor::~NightDriveEditor() {
-    stopTimer();
     setLookAndFeel(nullptr);
 }
 
-void NightDriveEditor::createKnob(const std::string& id, const juce::String& name) {
-    auto& kc = m_knobs[id];
-    kc.slider.setSliderStyle(juce::Slider::RotaryVerticalDrag);
-    kc.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    kc.label.setText(name, juce::dontSendNotification);
-    kc.label.setJustificationType(juce::Justification::centred);
-    kc.label.setFont(juce::Font(10.0f, juce::Font::plain));
-    kc.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
-    kc.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        m_processor.getApvts(), id, kc.slider);
-
-    if (id == "mix") {
-        m_masterPanel.addAndMakeVisible(kc.slider);
-        m_masterPanel.addAndMakeVisible(kc.label);
-    } else {
-        m_layersPanel.addAndMakeVisible(kc.slider);
-        m_layersPanel.addAndMakeVisible(kc.label);
-    }
+void NightDriveEditor::createFader(const std::string& id, const juce::String& name) {
+    auto& f = m_faders[id];
+    f.slider.setSliderStyle(juce::Slider::LinearVertical);
+    f.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    f.slider.setColour(juce::Slider::thumbColourId, juce::Colour(ff360_ui::Colors::WarmAmberRed));
+    f.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        m_processor.getApvts(), id, f.slider);
+    
+    f.label.setText(name, juce::dontSendNotification);
+    f.label.setJustificationType(juce::Justification::centred);
+    f.label.setFont(juce::Font(8.0f, juce::Font::bold));
+    f.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
+    
+    addAndMakeVisible(f.slider);
+    addAndMakeVisible(f.label);
 }
 
 void NightDriveEditor::paint(juce::Graphics& g) {
-    const auto bounds = getLocalBounds().toFloat();
-
-    juce::ColourGradient bgGrad(juce::Colour(ff360_ui::Colors::DeepBlack), 0, 0,
-                                juce::Colour(0xFF070708), 0, bounds.getHeight(), false);
+    auto bounds = getLocalBounds().toFloat();
+    
+    // Background gradient
+    juce::ColourGradient bgGrad(juce::Colour(ff360_ui::Colors::MatteCharcoal), 0, 0,
+                                juce::Colour(0xFF131316), 0, bounds.getHeight(), false);
     g.setGradientFill(bgGrad);
-    g.fillRect(bounds);
-
+    g.fillAll();
+    
+    // Outer border
+    g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold).withAlpha(0.16f));
+    g.drawRect(bounds, 1.0f);
+    
+    // Eyebrow and Title
+    g.setFont(juce::Font(10.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold));
-    g.setFont(juce::Font(20.0f, juce::Font::bold));
-    g.drawText("ff360_labs", 24, 16, 120, 24, juce::Justification::left);
-
-    g.setColour(juce::Colour(ff360_ui::Colors::TextOffWhite));
-    g.setFont(juce::Font(18.0f, juce::Font::bold | juce::Font::italic));
-    g.drawText("NightDrive", 140, 17, 140, 24, juce::Justification::left);
-
+    g.drawText("6 * GENERATIVE ATMOSPHERE", 16, 12, bounds.getWidth() - 32, 12, juce::Justification::left);
+    
+    g.setFont(juce::Font(12.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::TextDim));
-    g.setFont(juce::Font(10.0f, juce::Font::plain));
-    g.drawText("GENERATIVE SYNTHWAVE AMBIENT BED & TEXTURES", 270, 21, 320, 18, juce::Justification::left);
-
-    g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold).withAlpha(0.2f));
-    g.drawLine(24.0f, 52.0f, bounds.getWidth() - 24.0f, 52.0f, 1.0f);
+    g.drawText("NIGHTDRIVE", 16, 26, bounds.getWidth() - 32, 14, juce::Justification::left);
 }
 
 void NightDriveEditor::resized() {
-    const int pad = 20;
-    const int top = 64;
-    const int contentH = getHeight() - top - pad;
-
-    m_presetBox.setBounds(getWidth() - 220, 16, 196, 26);
-
-    const int heroW = 260;
-    const int masterW = 150;
-    const int layersW = getWidth() - heroW - masterW - (pad * 4);
-
-    m_heroPanel.setBounds(pad, top, heroW, contentH);
-    m_layersPanel.setBounds(pad * 2 + heroW, top, layersW, contentH);
-    m_masterPanel.setBounds(getWidth() - masterW - pad, top, masterW, contentH);
-
-    // Hero Panel
-    m_evolveHeroKnob.setBounds((heroW - 160) / 2, (contentH - 170) / 2, 160, 170);
-
-    // Layers Panel
-    m_scaleBox.setBounds(15, 35, 180, 26);
-    m_chordFlowStatus.setBounds(205, 35, 200, 26);
-
-    // Knobs: 3 cols x 2 rows
-    static const std::vector<std::string> layerList = {
-        "dronelevel", "granularlevel", "arplevel",
-        "density", "filtermove", "reverbwash"
-    };
-
-    const int cols = 3;
-    const int rows = 2;
-    const int cellW = (layersW - 20) / cols;
-    const int cellH = (contentH - 80) / rows;
-
-    for (size_t i = 0; i < layerList.size(); ++i) {
-        const int col = static_cast<int>(i % cols);
-        const int row = static_cast<int>(i / cols);
-        const int x = 10 + col * cellW;
-        const int y = 75 + row * cellH;
-
-        auto& kc = m_knobs[layerList[i]];
-        const int knobSize = std::min(cellW - 10, cellH - 24);
-        kc.slider.setBounds(x + (cellW - knobSize) / 2, y, knobSize, knobSize);
-        kc.label.setBounds(x, y + knobSize + 2, cellW, 14);
+    auto bounds = getLocalBounds().reduced(16);
+    bounds.removeFromTop(24);
+    
+    m_mainPanel.setBounds(bounds);
+    auto inner = bounds.reduced(14);
+    
+    // Scene (tall)
+    m_scene.setBounds(inner.removeFromTop(180));
+    inner.removeFromTop(16);
+    
+    // Faders
+    auto fadersArea = inner.removeFromTop(150);
+    int faderW = 20;
+    int faderCount = 6;
+    int spacing = (fadersArea.getWidth() - (faderCount * faderW)) / (faderCount - 1);
+    
+    const char* fNames[] = {"dronelevel", "granularlevel", "arplevel", "density", "filtermove", "reverbwash"};
+    for (int i = 0; i < faderCount; ++i) {
+        auto& f = m_faders[fNames[i]];
+        int x = fadersArea.getX() + i * (faderW + spacing);
+        f.slider.setBounds(x, fadersArea.getY(), faderW, 130);
+        f.label.setBounds(x - 20, f.slider.getBottom() + 4, faderW + 40, 14);
     }
-
-    // Master Panel
-    auto& mixKnob = m_knobs["mix"];
-    mixKnob.slider.setBounds((masterW - 64) / 2, 40, 64, 64);
-    mixKnob.label.setBounds(10, 108, masterW - 20, 14);
-
-    m_meterView.setBounds(25, 145, masterW - 50, contentH - 165);
-}
-
-void NightDriveEditor::timerCallback() {
-    const auto levels = m_processor.getMeteringBridge().getLevels();
-    m_meterView.setLevels(levels.peakL, levels.peakR, levels.rmsL, levels.rmsR);
-
-    if (m_processor.isChordFlowActive()) {
-        m_chordFlowStatus.setText("ChordFlow: Connected (Live)", juce::dontSendNotification);
-        m_chordFlowStatus.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::AccessibleSky));
-    } else {
-        m_chordFlowStatus.setText("ChordFlow: Standalone (Fallback)", juce::dontSendNotification);
-        m_chordFlowStatus.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
-    }
+    
+    inner.removeFromTop(16);
+    
+    // Scale box
+    m_scaleBox.setBounds(inner.removeFromTop(30));
+    inner.removeFromTop(16);
+    
+    // Evolution slider
+    auto evRow = inner.removeFromTop(20);
+    m_evolveLabel.setBounds(evRow.getX(), evRow.getY(), 60, 12);
+    m_evolveValueLabel.setBounds(evRow.getRight() - 50, evRow.getY(), 50, 12);
+    m_evolveSlider.setBounds(evRow.getX(), evRow.getY() + 14, evRow.getWidth(), 6);
+    
+    inner.removeFromTop(16);
+    
+    // Mix slider
+    auto mixRow = inner.removeFromTop(20);
+    m_mixLabel.setBounds(mixRow.getX(), mixRow.getY(), 60, 12);
+    m_mixValueLabel.setBounds(mixRow.getRight() - 50, mixRow.getY(), 50, 12);
+    m_mixSlider.setBounds(mixRow.getX(), mixRow.getY() + 14, mixRow.getWidth(), 6);
 }
 
 #endif

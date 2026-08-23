@@ -1,151 +1,165 @@
-#if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 #include "PluginEditor.h"
 
+#if __has_include(<juce_audio_processors/juce_audio_processors.h>)
+
 NeonWidthEditor::NeonWidthEditor(NeonWidthProcessor& p)
-    : AudioProcessorEditor(&p), m_processor(p),
-      m_scopePanel("STEREO FIELD / GONIOMETER"),
-      m_imagingPanel("STEREO IMAGING & MOVEMENT"),
-      m_masterPanel("OUTPUT / METERING") {
+    : AudioProcessorEditor(&p), m_processor(p)
+{
     setLookAndFeel(&m_lookAndFeel);
 
-    m_presetBox.setTextWhenNothingSelected("Select Preset...");
-    for (int i = 0; i < m_processor.getNumPrograms(); ++i) {
-        m_presetBox.addItem(m_processor.getProgramName(i), i + 1);
-    }
-    m_presetBox.setSelectedId(m_processor.getCurrentProgram() + 1, juce::dontSendNotification);
-    m_presetBox.onChange = [this]() {
-        m_processor.setCurrentProgram(m_presetBox.getSelectedId() - 1);
-    };
-    addAndMakeVisible(m_presetBox);
+    addAndMakeVisible(m_mainPanel);
+    addAndMakeVisible(m_scene);
 
-    addAndMakeVisible(m_scopePanel);
-    addAndMakeVisible(m_imagingPanel);
-    addAndMakeVisible(m_masterPanel);
-
-    m_scopePanel.addAndMakeVisible(m_stereoFieldView);
-
-    createKnob("microdelay", "MICRO-DELAY");
     createKnob("haas", "HAAS");
+    createKnob("microdelay", "MICRO DELAY");
     createKnob("detune", "DETUNE");
-    createKnob("mswidth", "M/S WIDTH");
-    createKnob("freqwidth", "FREQ WIDTH");
-    createKnob("freqcrossover", "CROSSOVER");
     createKnob("rotation", "ROTATION");
-    createKnob("bassmono", "BASS MONO");
+    createKnob("freqcrossover", "CROSSOVER");
     createKnob("mix", "MIX");
+    createKnob("freqwidth", "FREQ WIDTH");
 
-    m_masterPanel.addAndMakeVisible(m_meterView);
+    createFader("mswidth", "WIDTH");
 
-    setSize(920, 520);
-    startTimerHz(30);
+    m_bassMonoSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    m_bassMonoSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    m_bassMonoSlider.setColour(juce::Slider::thumbColourId, juce::Colour(ff360_ui::Colors::WarmAmberRed));
+    m_bassMonoAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        m_processor.getApvts(), "bassmono", m_bassMonoSlider);
+    
+    m_bassMonoLabel.setText("BASS MONO", juce::dontSendNotification);
+    m_bassMonoLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    m_bassMonoLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
+    
+    m_bassMonoValueLabel.setText("120 Hz", juce::dontSendNotification); // would be updated via listener normally
+    m_bassMonoValueLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    m_bassMonoValueLabel.setJustificationType(juce::Justification::centredRight);
+    
+    addAndMakeVisible(m_bassMonoSlider);
+    addAndMakeVisible(m_bassMonoLabel);
+    addAndMakeVisible(m_bassMonoValueLabel);
+
+    setSize(350, 640);
 }
 
 NeonWidthEditor::~NeonWidthEditor() {
-    stopTimer();
     setLookAndFeel(nullptr);
 }
 
 void NeonWidthEditor::createKnob(const std::string& id, const juce::String& name) {
-    auto& kc = m_knobs[id];
-    kc.slider.setSliderStyle(juce::Slider::RotaryVerticalDrag);
-    kc.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    kc.label.setText(name, juce::dontSendNotification);
-    kc.label.setJustificationType(juce::Justification::centred);
-    kc.label.setFont(juce::Font(10.0f, juce::Font::plain));
-    kc.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
-    kc.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        m_processor.getApvts(), id, kc.slider);
+    auto& k = m_knobs[id];
+    k.slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    k.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        m_processor.getApvts(), id, k.slider);
+    
+    k.label.setText(name, juce::dontSendNotification);
+    k.label.setJustificationType(juce::Justification::centred);
+    k.label.setFont(juce::Font(8.5f, juce::Font::plain));
+    k.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
+    
+    addAndMakeVisible(k.slider);
+    addAndMakeVisible(k.label);
+}
 
-    if (id == "mix") {
-        m_masterPanel.addAndMakeVisible(kc.slider);
-        m_masterPanel.addAndMakeVisible(kc.label);
-    } else {
-        m_imagingPanel.addAndMakeVisible(kc.slider);
-        m_imagingPanel.addAndMakeVisible(kc.label);
-    }
+void NeonWidthEditor::createFader(const std::string& id, const juce::String& name) {
+    auto& f = m_faders[id];
+    f.slider.setSliderStyle(juce::Slider::LinearVertical);
+    f.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    f.slider.setColour(juce::Slider::thumbColourId, juce::Colour(ff360_ui::Colors::AccessibleSky));
+    f.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        m_processor.getApvts(), id, f.slider);
+    
+    f.label.setText(name, juce::dontSendNotification);
+    f.label.setJustificationType(juce::Justification::centred);
+    f.label.setFont(juce::Font(8.5f, juce::Font::plain));
+    f.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
+    
+    addAndMakeVisible(f.slider);
+    addAndMakeVisible(f.label);
 }
 
 void NeonWidthEditor::paint(juce::Graphics& g) {
-    const auto bounds = getLocalBounds().toFloat();
-
-    juce::ColourGradient bgGrad(juce::Colour(ff360_ui::Colors::DeepBlack), 0, 0,
-                                juce::Colour(0xFF070708), 0, bounds.getHeight(), false);
+    auto bounds = getLocalBounds().toFloat();
+    
+    // Background gradient
+    juce::ColourGradient bgGrad(juce::Colour(ff360_ui::Colors::MatteCharcoal), 0, 0,
+                                juce::Colour(0xFF131316), 0, bounds.getHeight(), false);
     g.setGradientFill(bgGrad);
-    g.fillRect(bounds);
-
+    g.fillAll();
+    
+    // Outer border
+    g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold).withAlpha(0.16f));
+    g.drawRect(bounds, 1.0f);
+    
+    // Eyebrow and Title
+    g.setFont(juce::Font(10.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold));
-    g.setFont(juce::Font(20.0f, juce::Font::bold));
-    g.drawText("ff360_labs", 24, 16, 120, 24, juce::Justification::left);
-
-    g.setColour(juce::Colour(ff360_ui::Colors::TextOffWhite));
-    g.setFont(juce::Font(18.0f, juce::Font::bold | juce::Font::italic));
-    g.drawText("Neon Width", 140, 17, 120, 24, juce::Justification::left);
-
+    g.drawText("4 * STEREO IMAGING & MOVEMENT", 16, 12, bounds.getWidth() - 32, 12, juce::Justification::left);
+    
+    g.setFont(juce::Font(12.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::TextDim));
-    g.setFont(juce::Font(10.0f, juce::Font::plain));
-    g.drawText("STEREO MANIPULATION & MOVEMENT", 265, 21, 260, 18, juce::Justification::left);
-
-    g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold).withAlpha(0.2f));
-    g.drawLine(24.0f, 52.0f, bounds.getWidth() - 24.0f, 52.0f, 1.0f);
+    g.drawText("NEON WIDTH", 16, 26, bounds.getWidth() - 32, 14, juce::Justification::left);
 }
 
 void NeonWidthEditor::resized() {
-    const int pad = 20;
-    const int top = 64;
-    const int contentH = getHeight() - top - pad;
-
-    m_presetBox.setBounds(getWidth() - 220, 16, 196, 26);
-
-    const int scopeW = 280;
-    const int masterW = 150;
-    const int imagingW = getWidth() - scopeW - masterW - (pad * 4);
-
-    m_scopePanel.setBounds(pad, top, scopeW, contentH);
-    m_imagingPanel.setBounds(pad * 2 + scopeW, top, imagingW, contentH);
-    m_masterPanel.setBounds(getWidth() - masterW - pad, top, masterW, contentH);
-
-    // Goniometer in Scope Panel
-    m_stereoFieldView.setBounds(15, 35, scopeW - 30, contentH - 50);
-
-    // Imaging Panel: 4 cols x 2 rows
-    static const std::vector<std::string> knobList = {
-        "microdelay", "haas", "detune", "mswidth",
-        "freqwidth", "freqcrossover", "rotation", "bassmono"
-    };
-
-    const int cols = 4;
-    const int rows = 2;
-    const int cellW = (imagingW - 20) / cols;
-    const int cellH = (contentH - 45) / rows;
-
-    for (size_t i = 0; i < knobList.size(); ++i) {
-        const int col = static_cast<int>(i % cols);
-        const int row = static_cast<int>(i / cols);
-        const int x = 10 + col * cellW;
-        const int y = 35 + row * cellH;
-
-        auto& kc = m_knobs[knobList[i]];
-        const int knobSize = std::min(cellW - 10, cellH - 24);
-        kc.slider.setBounds(x + (cellW - knobSize) / 2, y, knobSize, knobSize);
-        kc.label.setBounds(x, y + knobSize + 2, cellW, 14);
+    auto bounds = getLocalBounds().reduced(16);
+    bounds.removeFromTop(24);
+    
+    m_mainPanel.setBounds(bounds);
+    auto inner = bounds.reduced(14);
+    
+    // Scene
+    m_scene.setBounds(inner.removeFromTop(120));
+    inner.removeFromTop(16);
+    
+    auto mainControls = inner.removeFromTop(250);
+    auto rightFader = mainControls.removeFromRight(40);
+    
+    // Fader
+    auto& f = m_faders["mswidth"];
+    f.slider.setBounds(rightFader.withTrimmedTop(16).withTrimmedBottom(20).withWidth(20).withX(rightFader.getX() + 10));
+    f.label.setBounds(rightFader.getX(), f.slider.getBottom() + 4, rightFader.getWidth(), 14);
+    
+    // Knobs
+    int knobW = 42;
+    int knobH = 42;
+    int spacingX = (mainControls.getWidth() - (3 * knobW)) / 3;
+    int spacingY = 16;
+    
+    const char* r1[] = {"haas", "microdelay", "freqwidth"};
+    for (int i = 0; i < 3; ++i) {
+        auto& k = m_knobs[r1[i]];
+        int x = mainControls.getX() + spacingX/2 + i * (knobW + spacingX);
+        int y = mainControls.getY();
+        k.slider.setBounds(x, y, knobW, knobH);
+        k.label.setBounds(x - 10, k.slider.getBottom(), knobW + 20, 14);
+    }
+    
+    const char* r2[] = {"detune", "rotation", "mix"};
+    for (int i = 0; i < 3; ++i) {
+        auto& k = m_knobs[r2[i]];
+        int x = mainControls.getX() + spacingX/2 + i * (knobW + spacingX);
+        int y = mainControls.getY() + knobH + spacingY + 14;
+        k.slider.setBounds(x, y, knobW, knobH);
+        k.label.setBounds(x - 10, k.slider.getBottom(), knobW + 20, 14);
     }
 
-    // Master Panel
-    auto& mixKnob = m_knobs["mix"];
-    mixKnob.slider.setBounds((masterW - 64) / 2, 40, 64, 64);
-    mixKnob.label.setBounds(10, 108, masterW - 20, 14);
-
-    m_meterView.setBounds(25, 145, masterW - 50, contentH - 165);
-}
-
-void NeonWidthEditor::timerCallback() {
-    const auto levels = m_processor.getMeteringBridge().getLevels();
-    m_meterView.setLevels(levels.peakL, levels.peakR, levels.rmsL, levels.rmsR);
-
-    const auto metrics = m_processor.getStereoEngine().getMetrics();
-    const auto& lBuf = m_processor.getLatestLeftBuffer();
-    const auto& rBuf = m_processor.getLatestRightBuffer();
-    m_stereoFieldView.updateData(metrics.phaseCorrelation, metrics.balance, lBuf.data(), rBuf.data(), lBuf.size());
+    const char* r3[] = {"freqcrossover"};
+    for (int i = 0; i < 1; ++i) {
+        auto& k = m_knobs[r3[i]];
+        int x = mainControls.getX() + spacingX/2 + i * (knobW + spacingX);
+        int y = mainControls.getY() + 2*(knobH + spacingY + 14);
+        k.slider.setBounds(x, y, knobW, knobH);
+        k.label.setBounds(x - 10, k.slider.getBottom(), knobW + 20, 14);
+    }
+    
+    inner.removeFromTop(10);
+    
+    // Bass Mono slider
+    auto bassRow = inner.removeFromTop(20);
+    m_bassMonoLabel.setBounds(bassRow.getX(), bassRow.getY(), 60, 12);
+    m_bassMonoValueLabel.setBounds(bassRow.getRight() - 50, bassRow.getY(), 50, 12);
+    m_bassMonoSlider.setBounds(bassRow.getX(), bassRow.getY() + 14, bassRow.getWidth(), 6);
 }
 
 #endif

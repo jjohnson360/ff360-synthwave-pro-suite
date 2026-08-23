@@ -1,175 +1,162 @@
-#if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 #include "PluginEditor.h"
 
+#if __has_include(<juce_audio_processors/juce_audio_processors.h>)
+
 CyberpunkGlitchEditor::CyberpunkGlitchEditor(CyberpunkGlitchProcessor& p)
-    : AudioProcessorEditor(&p), m_processor(p),
-      m_rhythmPanel("RHYTHM & PROBABILITY"),
-      m_dspPanel("GLITCH PROCESSORS"),
-      m_masterPanel("OUTPUT / METERING"),
-      m_probHeroKnob("PROBABILITY", "%") {
+    : AudioProcessorEditor(&p), m_processor(p)
+{
     setLookAndFeel(&m_lookAndFeel);
 
-    m_presetBox.setTextWhenNothingSelected("Select Preset...");
-    for (int i = 0; i < m_processor.getNumPrograms(); ++i) {
-        m_presetBox.addItem(m_processor.getProgramName(i), i + 1);
-    }
-    m_presetBox.setSelectedId(m_processor.getCurrentProgram() + 1, juce::dontSendNotification);
-    m_presetBox.onChange = [this]() {
-        m_processor.setCurrentProgram(m_presetBox.getSelectedId() - 1);
-    };
-    addAndMakeVisible(m_presetBox);
+    addAndMakeVisible(m_mainPanel);
+    addAndMakeVisible(m_scene);
 
-    addAndMakeVisible(m_rhythmPanel);
-    addAndMakeVisible(m_dspPanel);
-    addAndMakeVisible(m_masterPanel);
-
-    // Division Box
-    static const juce::StringArray divNames = { "1/4 Note", "1/8 Note", "1/16 Note", "1/32 Note" };
-    for (int i = 0; i < divNames.size(); ++i) {
-        m_divisionBox.addItem(divNames[i], i + 1);
-    }
+    m_divisionBox.addItem("1/4", 1);
+    m_divisionBox.addItem("1/8", 2);
+    m_divisionBox.addItem("1/16", 3);
+    m_divisionBox.addItem("1/32", 4);
+    m_divisionBox.setJustificationType(juce::Justification::centred);
     m_divisionAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
         m_processor.getApvts(), "division", m_divisionBox);
-    m_rhythmPanel.addAndMakeVisible(m_divisionBox);
+    addAndMakeVisible(m_divisionBox);
 
-    // Hero Probability Knob
-    if (auto* param = m_processor.getApvts().getRawParameterValue("probability")) {
-        m_probHeroKnob.setValue(param->load() * 0.01f, juce::dontSendNotification);
-    }
-    m_probHeroKnob.onValueChanged = [this](float val) {
-        if (auto* param = m_processor.getApvts().getParameter("probability")) {
-            param->setValueNotifyingHost(val);
-        }
-    };
-    m_rhythmPanel.addAndMakeVisible(m_probHeroKnob);
-
-    // Toggles
-    m_reverseToggle.setColour(juce::ToggleButton::textColourId, juce::Colour(ff360_ui::Colors::TextOffWhite));
-    m_reverseToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(ff360_ui::Colors::MetallicGold));
-    m_reverseAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
-        m_processor.getApvts(), "reverse", m_reverseToggle);
-    m_rhythmPanel.addAndMakeVisible(m_reverseToggle);
-
-    m_freezeToggle.setColour(juce::ToggleButton::textColourId, juce::Colour(ff360_ui::Colors::TextOffWhite));
-    m_freezeToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(ff360_ui::Colors::WarmAmberRed));
+    m_freezeToggle.setButtonText("Freeze");
     m_freezeAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         m_processor.getApvts(), "freeze", m_freezeToggle);
-    m_rhythmPanel.addAndMakeVisible(m_freezeToggle);
+    addAndMakeVisible(m_freezeToggle);
 
-    // DSP Knobs
-    createKnob("pitch", "PITCH");
+    m_reverseToggle.setButtonText("Reverse");
+    m_reverseAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        m_processor.getApvts(), "reverse", m_reverseToggle);
+    addAndMakeVisible(m_reverseToggle);
+
+    createHFader("probability", "PROBABILITY", true);
+    createHFader("filter", "FILTER");
+
     createKnob("bitcrush", "BITCRUSH");
+    createKnob("pitch", "PITCH", true);
     createKnob("gate", "GATE");
-    createKnob("filter", "FILTER");
     createKnob("resonance", "RESONANCE");
     createKnob("mix", "MIX");
 
-    m_masterPanel.addAndMakeVisible(m_meterView);
-
-    setSize(920, 520);
-    startTimerHz(30);
+    setSize(350, 640);
 }
 
 CyberpunkGlitchEditor::~CyberpunkGlitchEditor() {
-    stopTimer();
     setLookAndFeel(nullptr);
 }
 
-void CyberpunkGlitchEditor::createKnob(const std::string& id, const juce::String& name) {
-    auto& kc = m_knobs[id];
-    kc.slider.setSliderStyle(juce::Slider::RotaryVerticalDrag);
-    kc.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    kc.label.setText(name, juce::dontSendNotification);
-    kc.label.setJustificationType(juce::Justification::centred);
-    kc.label.setFont(juce::Font(10.0f, juce::Font::plain));
-    kc.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
-    kc.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        m_processor.getApvts(), id, kc.slider);
-
-    if (id == "mix") {
-        m_masterPanel.addAndMakeVisible(kc.slider);
-        m_masterPanel.addAndMakeVisible(kc.label);
-    } else {
-        m_dspPanel.addAndMakeVisible(kc.slider);
-        m_dspPanel.addAndMakeVisible(kc.label);
+void CyberpunkGlitchEditor::createKnob(const std::string& id, const juce::String& name, bool amber) {
+    auto& k = m_knobs[id];
+    k.slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    k.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    
+    // Quick and dirty "amber" flag using LookAndFeel thumb colour override logic
+    if (amber) {
+        k.slider.setColour(juce::Slider::thumbColourId, juce::Colour(ff360_ui::Colors::WarmAmberRed));
     }
+    
+    k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        m_processor.getApvts(), id, k.slider);
+    
+    k.label.setText(name, juce::dontSendNotification);
+    k.label.setJustificationType(juce::Justification::centred);
+    k.label.setFont(juce::Font(8.5f, juce::Font::plain));
+    k.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
+    
+    addAndMakeVisible(k.slider);
+    addAndMakeVisible(k.label);
+}
+
+void CyberpunkGlitchEditor::createHFader(const std::string& id, const juce::String& name, bool amber) {
+    auto& f = m_faders[id];
+    f.slider.setSliderStyle(juce::Slider::LinearHorizontal);
+    f.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    f.slider.setColour(juce::Slider::thumbColourId, juce::Colour(amber ? ff360_ui::Colors::WarmAmberRed : ff360_ui::Colors::AccessibleSky));
+    
+    f.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        m_processor.getApvts(), id, f.slider);
+    
+    f.label.setText(name, juce::dontSendNotification);
+    f.label.setJustificationType(juce::Justification::left);
+    f.label.setFont(juce::Font(9.0f, juce::Font::bold));
+    f.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
+    
+    f.valueLabel.setText("-", juce::dontSendNotification);
+    f.valueLabel.setJustificationType(juce::Justification::centredRight);
+    f.valueLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    f.valueLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
+    
+    addAndMakeVisible(f.slider);
+    addAndMakeVisible(f.label);
+    addAndMakeVisible(f.valueLabel);
 }
 
 void CyberpunkGlitchEditor::paint(juce::Graphics& g) {
-    const auto bounds = getLocalBounds().toFloat();
-
-    juce::ColourGradient bgGrad(juce::Colour(ff360_ui::Colors::DeepBlack), 0, 0,
-                                juce::Colour(0xFF070708), 0, bounds.getHeight(), false);
+    auto bounds = getLocalBounds().toFloat();
+    
+    juce::ColourGradient bgGrad(juce::Colour(ff360_ui::Colors::MatteCharcoal), 0, 0,
+                                juce::Colour(0xFF131316), 0, bounds.getHeight(), false);
     g.setGradientFill(bgGrad);
-    g.fillRect(bounds);
-
+    g.fillAll();
+    
+    g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold).withAlpha(0.16f));
+    g.drawRect(bounds, 1.0f);
+    
+    g.setFont(juce::Font(10.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold));
-    g.setFont(juce::Font(20.0f, juce::Font::bold));
-    g.drawText("ff360_labs", 24, 16, 120, 24, juce::Justification::left);
-
-    g.setColour(juce::Colour(ff360_ui::Colors::TextOffWhite));
-    g.setFont(juce::Font(18.0f, juce::Font::bold | juce::Font::italic));
-    g.drawText("Cyberpunk Glitch", 140, 17, 180, 24, juce::Justification::left);
-
+    g.drawText("8 * BEAT-SYNCED GLITCH EFFECTS", 16, 12, bounds.getWidth() - 32, 12, juce::Justification::left);
+    
+    g.setFont(juce::Font(12.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::TextDim));
-    g.setFont(juce::Font(10.0f, juce::Font::plain));
-    g.drawText("TEMPO-SYNCED STUTTER & BUFFER GLITCH", 325, 21, 280, 18, juce::Justification::left);
-
-    g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold).withAlpha(0.2f));
-    g.drawLine(24.0f, 52.0f, bounds.getWidth() - 24.0f, 52.0f, 1.0f);
+    g.drawText("CYBERPUNK GLITCH", 16, 26, bounds.getWidth() - 32, 14, juce::Justification::left);
 }
 
 void CyberpunkGlitchEditor::resized() {
-    const int pad = 20;
-    const int top = 64;
-    const int contentH = getHeight() - top - pad;
-
-    m_presetBox.setBounds(getWidth() - 220, 16, 196, 26);
-
-    const int rhythmW = 260;
-    const int masterW = 150;
-    const int dspW = getWidth() - rhythmW - masterW - (pad * 4);
-
-    m_rhythmPanel.setBounds(pad, top, rhythmW, contentH);
-    m_dspPanel.setBounds(pad * 2 + rhythmW, top, dspW, contentH);
-    m_masterPanel.setBounds(getWidth() - masterW - pad, top, masterW, contentH);
-
-    // Rhythm Panel
-    m_divisionBox.setBounds(20, 35, rhythmW - 40, 26);
-    m_probHeroKnob.setBounds((rhythmW - 140) / 2, 75, 140, 150);
-    m_reverseToggle.setBounds(25, contentH - 65, 100, 24);
-    m_freezeToggle.setBounds(135, contentH - 65, 100, 24);
-
-    // DSP Panel: 3 cols x 2 rows
-    static const std::vector<std::string> dspList = { "pitch", "bitcrush", "gate", "filter", "resonance" };
-    const int cols = 3;
-    const int rows = 2;
-    const int cellW = (dspW - 20) / cols;
-    const int cellH = (contentH - 45) / rows;
-
-    for (size_t i = 0; i < dspList.size(); ++i) {
-        const int col = static_cast<int>(i % cols);
-        const int row = static_cast<int>(i / cols);
-        const int x = 10 + col * cellW;
-        const int y = 35 + row * cellH;
-
-        auto& kc = m_knobs[dspList[i]];
-        const int knobSize = std::min(cellW - 10, cellH - 24);
-        kc.slider.setBounds(x + (cellW - knobSize) / 2, y, knobSize, knobSize);
-        kc.label.setBounds(x, y + knobSize + 2, cellW, 14);
+    auto bounds = getLocalBounds().reduced(16);
+    bounds.removeFromTop(24);
+    
+    m_mainPanel.setBounds(bounds);
+    auto inner = bounds.reduced(14);
+    
+    // Top row controls
+    auto paginator = inner.removeFromTop(24);
+    m_divisionBox.setBounds(paginator.removeFromRight(100));
+    m_freezeToggle.setBounds(paginator.removeFromLeft(60));
+    m_reverseToggle.setBounds(paginator.removeFromLeft(80).withTrimmedLeft(10));
+    
+    inner.removeFromTop(10);
+    
+    // Scene
+    m_scene.setBounds(inner.removeFromTop(100));
+    inner.removeFromTop(16);
+    
+    // Sliders
+    auto probRow = inner.removeFromTop(36);
+    auto& fp = m_faders["probability"];
+    fp.label.setBounds(probRow.getX(), probRow.getY(), 80, 12);
+    fp.valueLabel.setBounds(probRow.getRight() - 60, probRow.getY(), 60, 12);
+    fp.slider.setBounds(probRow.getX(), probRow.getY() + 16, probRow.getWidth(), 8);
+    
+    auto filtRow = inner.removeFromTop(36);
+    auto& ff = m_faders["filter"];
+    ff.label.setBounds(filtRow.getX(), filtRow.getY(), 80, 12);
+    ff.valueLabel.setBounds(filtRow.getRight() - 60, filtRow.getY(), 60, 12);
+    ff.slider.setBounds(filtRow.getX(), filtRow.getY() + 16, filtRow.getWidth(), 8);
+    
+    inner.removeFromTop(16);
+    
+    // Knobs (5 knobs)
+    int knobW = 42;
+    int knobH = 42;
+    int dx = (inner.getWidth() - (5 * knobW)) / 4;
+    
+    const char* rowK[] = {"bitcrush", "pitch", "gate", "resonance", "mix"};
+    for(int i = 0; i < 5; ++i) {
+        auto& k = m_knobs[rowK[i]];
+        int x = inner.getX() + i * (knobW + dx);
+        k.slider.setBounds(x, inner.getY(), knobW, knobH);
+        k.label.setBounds(x - 10, k.slider.getBottom(), knobW + 20, 14);
     }
-
-    // Master Panel
-    auto& mixKnob = m_knobs["mix"];
-    mixKnob.slider.setBounds((masterW - 64) / 2, 40, 64, 64);
-    mixKnob.label.setBounds(10, 108, masterW - 20, 14);
-
-    m_meterView.setBounds(25, 145, masterW - 50, contentH - 165);
-}
-
-void CyberpunkGlitchEditor::timerCallback() {
-    const auto levels = m_processor.getMeteringBridge().getLevels();
-    m_meterView.setLevels(levels.peakL, levels.peakR, levels.rmsL, levels.rmsR);
 }
 
 #endif

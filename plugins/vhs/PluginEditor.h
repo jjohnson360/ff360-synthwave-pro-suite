@@ -6,32 +6,26 @@
 #include "ff360_ui/HeroKnob.h"
 #include "ff360_ui/GlassPanel.h"
 #include "ff360_ui/MeterView.h"
+#include "ff360_ui/Scenes.h"
 
-class VHSPluginEditor : public juce::AudioProcessorEditor, public juce::Timer {
+class VHSPluginEditor : public juce::AudioProcessorEditor {
 public:
     explicit VHSPluginEditor(VHSPluginProcessor&);
     ~VHSPluginEditor() override;
 
     void paint(juce::Graphics&) override;
     void resized() override;
-    void timerCallback() override;
 
 private:
     VHSPluginProcessor& m_processor;
     ff360_ui::FF360_LookAndFeel m_lookAndFeel;
 
-    // Header Components
-    juce::ComboBox m_presetBox;
+    ff360_ui::FF360_GlassPanel m_mainPanel;
+    ff360_ui::VHSScene m_scene;
 
-    // Panels
-    ff360_ui::FF360_GlassPanel m_macroPanel;
-    ff360_ui::FF360_GlassPanel m_modulesPanel;
-    ff360_ui::FF360_GlassPanel m_masterPanel;
-
-    // Hero Macro Knob
     std::unique_ptr<ff360_ui::FF360_HeroKnob> m_degradeKnob;
+    juce::Label m_ff360Label;
 
-    // 12 Module Sliders & Attachments
     struct KnobControl {
         juce::Slider slider;
         juce::Label label;
@@ -39,15 +33,16 @@ private:
     };
     std::unordered_map<std::string, KnobControl> m_knobs;
 
-    // Master Knobs
-    KnobControl m_inGainKnob;
-    KnobControl m_outGainKnob;
-    KnobControl m_mixKnob;
+    juce::Label m_modeLabel;
+    juce::TextButton m_modePrevButton;
+    juce::TextButton m_modeNextButton;
 
-    // Meter
-    ff360_ui::FF360_MeterView m_meterView;
+    juce::Slider m_mixSlider;
+    juce::Label m_mixLabel;
+    juce::Label m_mixValueLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> m_mixAttach;
 
-    void createKnob(const std::string& id, const juce::String& name, const juce::String& unit = "%");
+    void createKnob(const std::string& id, const juce::String& name);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VHSPluginEditor)
 };

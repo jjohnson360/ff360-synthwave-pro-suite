@@ -3,46 +3,45 @@
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 #include "PluginProcessor.h"
 #include "ff360_ui/LookAndFeel.h"
-#include "ff360_ui/HeroKnob.h"
 #include "ff360_ui/GlassPanel.h"
-#include "ff360_ui/MeterView.h"
+#include "ff360_ui/Scenes.h"
 
-class NightDriveEditor : public juce::AudioProcessorEditor, public juce::Timer {
+class NightDriveEditor : public juce::AudioProcessorEditor {
 public:
     explicit NightDriveEditor(NightDriveProcessor&);
     ~NightDriveEditor() override;
 
     void paint(juce::Graphics&) override;
     void resized() override;
-    void timerCallback() override;
 
 private:
     NightDriveProcessor& m_processor;
     ff360_ui::FF360_LookAndFeel m_lookAndFeel;
 
-    juce::ComboBox m_presetBox;
-    juce::ComboBox m_scaleBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> m_scaleAttach;
+    ff360_ui::FF360_GlassPanel m_mainPanel;
+    ff360_ui::VHSScene m_scene;
 
-    ff360_ui::FF360_GlassPanel m_heroPanel;
-    ff360_ui::FF360_GlassPanel m_layersPanel;
-    ff360_ui::FF360_GlassPanel m_masterPanel;
-
-    // Big Hero EVOLVE Knob
-    ff360_ui::FF360_HeroKnob m_evolveHeroKnob;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> m_evolveAttach;
-
-    struct KnobControl {
+    struct FaderControl {
         juce::Slider slider;
         juce::Label label;
         std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
     };
-    std::unordered_map<std::string, KnobControl> m_knobs;
+    std::unordered_map<std::string, FaderControl> m_faders;
 
-    juce::Label m_chordFlowStatus;
-    ff360_ui::FF360_MeterView m_meterView;
+    juce::Slider m_evolveSlider;
+    juce::Label m_evolveLabel;
+    juce::Label m_evolveValueLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> m_evolveAttach;
 
-    void createKnob(const std::string& id, const juce::String& name);
+    juce::Slider m_mixSlider;
+    juce::Label m_mixLabel;
+    juce::Label m_mixValueLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> m_mixAttach;
+
+    juce::ComboBox m_scaleBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> m_scaleAttach;
+
+    void createFader(const std::string& id, const juce::String& name);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(NightDriveEditor)
 };

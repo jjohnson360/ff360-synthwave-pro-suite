@@ -3,28 +3,23 @@
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 #include "PluginProcessor.h"
 #include "ff360_ui/LookAndFeel.h"
-#include "ff360_ui/HeroKnob.h"
 #include "ff360_ui/GlassPanel.h"
-#include "ff360_ui/MeterView.h"
+#include "ff360_ui/Scenes.h"
 
-class NeonChorusEditor : public juce::AudioProcessorEditor, public juce::Timer {
+class NeonChorusEditor : public juce::AudioProcessorEditor {
 public:
     explicit NeonChorusEditor(NeonChorusProcessor&);
     ~NeonChorusEditor() override;
 
     void paint(juce::Graphics&) override;
     void resized() override;
-    void timerCallback() override;
 
 private:
     NeonChorusProcessor& m_processor;
     ff360_ui::FF360_LookAndFeel m_lookAndFeel;
 
-    juce::ComboBox m_presetBox;
-
-    ff360_ui::FF360_GlassPanel m_chorusPanel;
-    ff360_ui::FF360_GlassPanel m_modesPanel;
-    ff360_ui::FF360_GlassPanel m_masterPanel;
+    ff360_ui::FF360_GlassPanel m_mainPanel;
+    ff360_ui::PyramidScene m_scene;
 
     struct KnobControl {
         juce::Slider slider;
@@ -33,16 +28,19 @@ private:
     };
     std::unordered_map<std::string, KnobControl> m_knobs;
 
-    // Mode Toggles
-    juce::ToggleButton m_vintageToggle { "Vintage Character" };
-    juce::ToggleButton m_quadToggle { "Quad Chorus (4-Voice)" };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> m_vintageAttach;
+    juce::TextButton m_quadButton;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> m_quadAttach;
 
-    // Meter
-    ff360_ui::FF360_MeterView m_meterView;
+    // Dots for cosmetic UI chrome
+    struct DotIndicator : public juce::Component {
+        void paint(juce::Graphics& g) override {
+            g.setColour(juce::Colour(0x1FFFFFFF));
+            g.fillEllipse(0, 0, 6, 6);
+        }
+    };
+    DotIndicator m_d1, m_d2, m_d3;
 
-    void createKnob(const std::string& id, const juce::String& name);
+    void createKnob(const std::string& id, const juce::String& name, bool useAmberAccent = false);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(NeonChorusEditor)
 };
