@@ -34,7 +34,7 @@ class NumberedCanvas(canvas.Canvas):
         self.setFillColor(colors.HexColor("#8a8a93"))
 
         # Header
-        self.drawString(54, 750, "ff360_labs Synthwave Production Suite — User Manual v1.0.0")
+        self.drawString(54, 750, "ff360_labs Synthwave Production Suite — User Manual v1.0.0-beta")
         self.setStrokeColor(colors.HexColor("#c9a15a"), alpha=0.3)
         self.setLineWidth(0.5)
         self.line(54, 742, 558, 742)
@@ -176,7 +176,7 @@ def build_pdf(filename):
     story.append(Spacer(1, 15))
     story.append(Paragraph("VHS • Neon Chorus • Midnight Reverb • Neon Width<br/>Neon Tape Stop • Cyberpunk Glitch • RetroFX • NightDrive", ParagraphStyle('SubList', parent=subtitle_style, fontSize=11, leading=16, textColor=c_dim)))
     story.append(Spacer(1, 180))
-    story.append(Paragraph("Version 1.0.0 Production Release | VST3 • AU • Standalone<br/>Windows 10/11 & macOS 12+ (Apple Silicon & Intel)", meta_style))
+    story.append(Paragraph("Version 1.0.0-beta Production Preview | VST3 • AU • Standalone<br/>Windows 10/11 & macOS 12+ (Apple Silicon & Intel)", meta_style))
     story.append(PageBreak())
 
     # ==========================================

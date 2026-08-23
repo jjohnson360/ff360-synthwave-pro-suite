@@ -6,8 +6,8 @@ def create_releases():
     dist_dir = os.path.join(base_dir, "dist")
     os.makedirs(dist_dir, exist_ok=True)
 
-    win_zip_path = os.path.join(dist_dir, "ff360_Synthwave_FX_Suite_v1.0.0_Windows_x64.zip")
-    mac_zip_path = os.path.join(dist_dir, "ff360_Synthwave_FX_Suite_v1.0.0_macOS_Universal.zip")
+    win_zip_path = os.path.join(dist_dir, "ff360_Synthwave_FX_Suite_v1.0.0-beta_Windows_x64.zip")
+    mac_zip_path = os.path.join(dist_dir, "ff360_Synthwave_FX_Suite_v1.0.0-beta_macOS_Universal.zip")
 
     # Files common to both
     common_files = [
@@ -29,7 +29,7 @@ def create_releases():
         for rel_file in common_files:
             abs_p = os.path.join(base_dir, rel_file)
             if os.path.exists(abs_p):
-                win_zip.write(abs_p, arcname=os.path.join("ff360_Synthwave_Suite_v1.0.0", rel_file))
+                win_zip.write(abs_p, arcname=os.path.join("ff360_Synthwave_Suite_v1.0.0-beta", rel_file))
 
         for rel_dir in common_dirs:
             abs_dir = os.path.join(base_dir, rel_dir)
@@ -37,7 +37,7 @@ def create_releases():
                 for f in files:
                     full_p = os.path.join(root, f)
                     rel_p = os.path.relpath(full_p, base_dir)
-                    win_zip.write(full_p, arcname=os.path.join("ff360_Synthwave_Suite_v1.0.0", rel_p))
+                    win_zip.write(full_p, arcname=os.path.join("ff360_Synthwave_Suite_v1.0.0-beta", rel_p))
 
         # Add compiled Windows binaries
         bin_files = [
@@ -57,7 +57,7 @@ def create_releases():
         for rel_file in common_files:
             abs_p = os.path.join(base_dir, rel_file)
             if os.path.exists(abs_p):
-                mac_zip.write(abs_p, arcname=os.path.join("ff360_Synthwave_Suite_v1.0.0", rel_file))
+                mac_zip.write(abs_p, arcname=os.path.join("ff360_Synthwave_Suite_v1.0.0-beta", rel_file))
 
         full_source_dirs = [
             "ff360_dsp_core",
@@ -74,7 +74,7 @@ def create_releases():
                         continue
                     full_p = os.path.join(root, f)
                     rel_p = os.path.relpath(full_p, base_dir)
-                    mac_zip.write(full_p, arcname=os.path.join("ff360_Synthwave_Suite_v1.0.0", rel_p))
+                    mac_zip.write(full_p, arcname=os.path.join("ff360_Synthwave_Suite_v1.0.0-beta", rel_p))
 
     print(f"macOS Universal package created at: {mac_zip_path}")
 

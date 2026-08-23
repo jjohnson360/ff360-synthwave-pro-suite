@@ -4,9 +4,9 @@
 [![JUCE](https://img.shields.io/badge/JUCE-7%20%2F%208-orange.svg)](https://juce.com/)
 [![Platforms](https://img.shields.io/badge/Platforms-Windows%20%7C%20macOS%2012%2B-blueviolet.svg)](https://github.com/)
 [![License](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/Release-v1.0.0-gold.svg)](https://github.com/)
+[![Status](https://img.shields.io/badge/Release-v1.0.0--beta-yellow.svg)](https://github.com/jjohnson360/ff360-synthwave-pro-suite/releases)
 
-A definitive collection of eight professional audio plugins engineered specifically for modern **Synthwave, Cyberpunk, Darksynth, Vaporwave, and Retro-Futuristic** music production.
+A definitive collection of eight professional audio plugins engineered specifically for modern **Synthwave, Cyberpunk, Darksynth, Vaporwave, and Retro-Futuristic** music production. Available as a public beta preview (v1.0.0-beta).
 
 ---
 
