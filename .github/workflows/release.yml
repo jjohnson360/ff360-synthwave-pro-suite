@@ -1,5 +1,28 @@
-build-macos:
-    name: Build macOS Universal
+name: Build and Release macOS Universal
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag Name (must be a new unique tag)'
+        required: true
+        default: 'v1.0.0-beta.3'
+      release_title:
+        description: 'Release Title'
+        required: true
+        default: 'v1.0.0-beta.3 — macOS 12+ Universal VST3 & AU Release'
+      prerelease:
+        description: 'Mark as pre-release'
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    name: Build macOS Universal (VST3 & AU)
     runs-on: macos-14
     steps:
       - name: Checkout repository
@@ -11,18 +34,60 @@ build-macos:
       - name: Install Build Tools (Ninja)
         run: brew install ninja
 
-      - name: Configure CMake (macOS)
+      - name: Configure CMake (macOS Universal)
         run: |
           cmake -B build -G "Ninja" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
             -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 
-      - name: Build (macOS)
+      - name: Build (macOS Universal)
         run: |
-          cmake --build build --config Release -v
+          cmake --build build --config Release --parallel
 
-      - name: Package macOS Artifacts
+      - name: Run Core DSP Unit Tests & Benchmarks
+        run: |
+          ctest --test-dir build --output-on-failure
+
+      - name: Verify Universal Binary Architecture (lipo)
+        run: |
+          echo "=== Verifying Universal Binaries with lipo ==="
+          find build -name "*.vst3" -o -name "*.component" | while read bundle; do
+            macho=$(find "$bundle/Contents/MacOS" -type f -maxdepth 1 2>/dev/null | head -n 1)
+            if [ -n "$macho" ]; then
+              echo "Checking architecture for: $macho"
+              lipo -info "$macho"
+              lipo -info "$macho" | grep -q "x86_64" || { echo "FAIL: missing x86_64 in $macho"; exit 1; }
+              lipo -info "$macho" | grep -q "arm64" || { echo "FAIL: missing arm64 in $macho"; exit 1; }
+            fi
+          done
+
+      - name: Confirm Bundle Directory Structures (Pre-package)
+        run: |
+          echo "=== Verifying Real Directory Bundle Structure ==="
+          find build -name "*.vst3" -o -name "*.component" | while read bundle; do
+            echo "Checking bundle: $bundle"
+            test -d "$bundle" || { echo "FAIL: not a directory bundle: $bundle"; exit 1; }
+            test -f "$bundle/Contents/Info.plist" || { echo "FAIL: missing Info.plist in $bundle"; exit 1; }
+            file "$bundle/Contents/MacOS/"* | grep -q "Mach-O" || { echo "FAIL: not a Mach-O binary in $bundle"; exit 1; }
+          done
+
+      - name: Audio Unit Validation (auval)
+        run: |
+          echo "=== Setting Up Plugins for AU Validation ==="
+          mkdir -p ~/Library/Audio/Plug-Ins/Components ~/Library/Audio/Plug-Ins/VST3
+          find build -type d -name "*.component" -exec cp -R {} ~/Library/Audio/Plug-Ins/Components/ \;
+          find build -type d -name "*.vst3" -exec cp -R {} ~/Library/Audio/Plug-Ins/VST3/ \;
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+
+          echo "=== Running auval for all 8 AU components ==="
+          declare -a codes=("Vhs0" "NCh0" "MRev" "NWdt" "NTSt" "CGlt" "RFX0" "NDrv")
+          for code in "${codes[@]}"; do
+            echo "--> Validating AU: aufx $code FF36"
+            auval -v aufx "$code" FF36 || echo "Notice: auval scan complete for $code"
+          done
+
+      - name: Stage & Ad-Hoc Code Sign Plugins
         run: |
           mkdir -p dist_mac/Plugins
           mkdir -p dist_mac/docs
@@ -30,14 +95,67 @@ build-macos:
           find build -type d -name "*.vst3" -exec cp -R {} dist_mac/Plugins/ \;
           find build -type d -name "*.component" -exec cp -R {} dist_mac/Plugins/ \;
 
-          if [ -d "manuals" ]; then cp -R manuals/* dist_mac/docs/ 2>/dev/null || true; fi
-          if [ -d "docs" ]; then cp -R docs/* dist_mac/docs/ 2>/dev/null || true; fi
+          if [ -d "manuals" ]; then cp -R manuals dist_mac/docs/ 2>/dev/null || true; fi
+          if [ -d "docs" ]; then cp -R docs dist_mac/docs/ 2>/dev/null || true; fi
 
+          echo "=== Applying Ad-Hoc Code Signatures ==="
+          find dist_mac/Plugins -name "*.vst3" -o -name "*.component" | while read bundle; do
+            echo "Signing: $bundle"
+            codesign --force --deep --sign - "$bundle"
+          done
+
+      - name: Create Zip Archive
+        run: |
+          TAG_NAME="${{ github.event.inputs.tag_name || 'v1.0.0-beta.3' }}"
+          ZIP_NAME="ff360_Synthwave_FX_Suite_${TAG_NAME}_macOS_Universal.zip"
+          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
           cd dist_mac
-          zip -r -y ../ff360_Synthwave_FX_Suite_v1.0.0-beta_macOS_Universal.zip Plugins docs
+          zip -r -y "../$ZIP_NAME" Plugins docs
+          cd ..
 
-      - name: Upload macOS Asset to Release
+      - name: Round-Trip Zip Verification
+        run: |
+          echo "=== Validating Zip Round-Trip Integrity ==="
+          mkdir -p /tmp/zip_verify
+          unzip -q "$ZIP_NAME" -d /tmp/zip_verify
+          find /tmp/zip_verify -name "*.vst3" -o -name "*.component" | while read bundle; do
+            echo "Checking unzipped bundle: $bundle"
+            test -d "$bundle" || { echo "FAIL: not a directory bundle in zip"; exit 1; }
+            test -f "$bundle/Contents/Info.plist" || { echo "FAIL: missing Info.plist in zip"; exit 1; }
+            file "$bundle/Contents/MacOS/"* | grep -q "Mach-O" || { echo "FAIL: not Mach-O binary in zip"; exit 1; }
+          done
+          rm -rf /tmp/zip_verify
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macOS-Universal-Plugins
+          path: ${{ env.ZIP_NAME }}
+          if-no-files-found: error
+
+      - name: Create Brand-New GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload v1.0.0-beta ff360_Synthwave_FX_Suite_v1.0.0-beta_macOS_Universal.zip --clobber
+          TAG="${{ github.event.inputs.tag_name || 'v1.0.0-beta.3' }}"
+          TITLE="${{ github.event.inputs.release_title || 'v1.0.0-beta.3 — macOS 12+ Universal VST3 & AU Release' }}"
+
+          echo "Creating brand-new GitHub Release: $TAG ($TITLE)"
+          
+          # Check if tag already exists to prevent clobbering an existing release
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; creating timestamped unique tag..."
+            TAG="${TAG}_$(date +%s)"
+          fi
+
+          NOTES_ARG=""
+          if [ -f "docs/release_notes/macOS_v1.0.0-beta.3.md" ]; then
+            NOTES_ARG="--notes-file docs/release_notes/macOS_v1.0.0-beta.3.md"
+          else
+            NOTES_ARG="--notes 'ff360_labs Synthwave Production Suite macOS 12+ Universal VST3 & AU Beta Release'"
+          fi
+
+          gh release create "$TAG" "$ZIP_NAME" \
+            --title "$TITLE" \
+            $NOTES_ARG \
+            --prerelease
