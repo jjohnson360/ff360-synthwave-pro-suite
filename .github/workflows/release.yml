@@ -1,16 +1,4 @@
-name: Build and Release
-
-on:
-  workflow_dispatch:
-
-permissions:
-  contents: write
-
-jobs:
-  # =======================================================
-  # macOS Universal (VST3 & AU) Build & Release
-  # =======================================================
-  build-macos:
+build-macos:
     name: Build macOS Universal
     runs-on: macos-14
     steps:
@@ -28,25 +16,24 @@ jobs:
           cmake -B build -G "Xcode" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
-            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO
 
       - name: Build (macOS)
-        run: cmake --build build --config Release --parallel 4
+        run: cmake --build build --config Release --parallel 4 --verbose
 
       - name: Package macOS Artifacts
         run: |
           mkdir -p dist_mac/Plugins
           mkdir -p dist_mac/docs
 
-          # Collect built VST3 and AU (.component) bundles
           find build -type d -name "*.vst3" -exec cp -R {} dist_mac/Plugins/ \;
           find build -type d -name "*.component" -exec cp -R {} dist_mac/Plugins/ \;
 
-          # Collect documentation
           if [ -d "manuals" ]; then cp -R manuals/* dist_mac/docs/ 2>/dev/null || true; fi
           if [ -d "docs" ]; then cp -R docs/* dist_mac/docs/ 2>/dev/null || true; fi
 
-          # Zip preserving macOS file permissions and symlinks
           cd dist_mac
           zip -r -y ../ff360_Synthwave_FX_Suite_v1.0.0-beta_macOS_Universal.zip Plugins docs
 
@@ -55,42 +42,3 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload v1.0.0-beta ff360_Synthwave_FX_Suite_v1.0.0-beta_macOS_Universal.zip --clobber
-
-  # =======================================================
-  # Windows x64 (VST3 & Standalone) Build & Release
-  # =======================================================
-  build-windows:
-    name: Build Windows x64
-    runs-on: windows-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      - name: Configure CMake (Windows)
-        run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
-
-      - name: Build (Windows)
-        run: cmake --build build --config Release --parallel
-
-      - name: Package Windows Artifacts
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path dist_win/Plugins | Out-Null
-          New-Item -ItemType Directory -Force -Path dist_win/docs | Out-Null
-
-          Get-ChildItem -Path build -Recurse -Filter "*.vst3" | Copy-Item -Destination dist_win/Plugins -Recurse -Force
-          Get-ChildItem -Path build -Recurse -Filter "*.exe" | Copy-Item -Destination dist_win/Plugins -Force
-
-          if (Test-Path manuals) { Copy-Item -Path manuals/* -Destination dist_win/docs -Recurse -Force }
-          if (Test-Path docs) { Copy-Item -Path docs/* -Destination dist_win/docs -Recurse -Force }
-
-          Compress-Archive -Path dist_win/* -DestinationPath ff360_Synthwave_FX_Suite_v1.0.0-beta_Windows_x64.zip -Force
-
-      - name: Upload Windows Asset to Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload v1.0.0-beta ff360_Synthwave_FX_Suite_v1.0.0-beta_Windows_x64.zip --clobber
