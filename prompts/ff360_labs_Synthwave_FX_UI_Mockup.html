@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ff360_labs — Synthwave FX Collection — UI Reference</title>
+<style>
+  :root{
+    --black:#0a0a0b;
+    --charcoal:#17171a;
+    --charcoal-2:#1e1e22;
+    --gold:#c9a15a;
+    --gold-soft:rgba(201,161,90,0.35);
+    --amber:#e8654a;
+    --sky:#38bdf8;
+    --text:#eae6dd;
+    --text-dim:#9a958a;
+    --track:rgba(255,255,255,0.08);
+    --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(201,161,90,0.06), transparent 60%),
+      var(--black);
+    color:var(--text);
+    font-family:'Segoe UI', -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;
+    padding:28px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1500px;margin:0 auto;}
+
+  /* ---------- HEADER ---------- */
+  header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:24px;
+    flex-wrap:wrap;
+    padding-bottom:20px;
+    margin-bottom:24px;
+    border-bottom:1px solid rgba(201,161,90,0.18);
+  }
+  .brand{display:flex;align-items:center;gap:14px;}
+  .brand svg{display:block;}
+  .brand h1{font-size:22px;margin:0;letter-spacing:0.5px;color:var(--gold);font-weight:700;}
+  .brand p{margin:2px 0 0;font-size:11px;letter-spacing:3px;color:var(--text-dim);text-transform:uppercase;}
+  .legend{display:flex;gap:22px;flex-wrap:wrap;background:var(--charcoal);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:10px 18px;}
+  .legend-item{display:flex;align-items:center;gap:8px;}
+  .legend-dot{width:16px;height:16px;border-radius:50%;flex:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.15);}
+  .legend-item span{display:block;}
+  .legend-name{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;}
+  .legend-hex{font-size:12px;color:var(--text);font-weight:600;}
+
+  /* ---------- GRID ---------- */
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(4, 1fr);
+    gap:20px;
+  }
+  @media (max-width:1200px){ .grid{grid-template-columns:repeat(2,1fr);} }
+  @media (max-width:620px){ .grid{grid-template-columns:1fr;} }
+
+  .card{
+    background:linear-gradient(180deg, var(--charcoal) 0%, #131316 100%);
+    border:1px solid rgba(201,161,90,0.16);
+    border-radius:var(--radius);
+    padding:16px;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.02);
+  }
+  .card-eyebrow{font-size:10px;letter-spacing:2px;color:var(--gold);text-transform:uppercase;font-weight:700;}
+  .card-title{font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1.5px;margin-top:-6px;}
+
+  .panel{
+    background:rgba(10,10,11,0.55);
+    border:1px solid rgba(201,161,90,0.14);
+    border-radius:10px;
+    padding:14px;
+    backdrop-filter:blur(6px);
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+    flex:1;
+  }
+  .panel-head{display:flex;align-items:center;justify-content:space-between;}
+  .plugin-logo{
+    font-family:Georgia, 'Times New Roman', serif;
+    font-style:italic;
+    font-weight:700;
+    font-size:19px;
+    letter-spacing:0.5px;
+  }
+  .tag{font-size:9px;color:var(--text-dim);letter-spacing:1px;}
+
+  /* ---------- KNOBS ---------- */
+  .knob-row{display:flex;gap:14px;justify-content:space-between;}
+  .knob-col{display:flex;flex-direction:column;gap:14px;}
+  .knob{display:flex;flex-direction:column;align-items:center;gap:5px;width:52px;}
+  .knob-dial{
+    --pct:50;
+    width:38px;height:38px;border-radius:50%;position:relative;
+    background:conic-gradient(var(--gold) calc(var(--pct)*3.6deg), var(--track) 0deg);
+    -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+            mask:radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+  }
+  .knob-face{
+    position:absolute;inset:6px;border-radius:50%;
+    background:radial-gradient(circle at 35% 28%, #2b2b2f, #141416 75%);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);
+  }
+  .knob-face::after{
+    content:"";position:absolute;top:3px;left:50%;width:2px;height:7px;
+    background:var(--gold);border-radius:2px;
+    transform-origin:1px 16px;
+    transform:translateX(-50%) rotate(calc(var(--pct)*2.7deg - 135deg));
+  }
+  .knob-label{font-size:8.5px;color:var(--text-dim);letter-spacing:0.5px;text-align:center;text-transform:uppercase;}
+  .knob-value{font-size:9.5px;color:var(--text);font-weight:600;}
+
+  .knob-lg{width:96px;}
+  .knob-lg .knob-dial{
+    width:78px;height:78px;
+    box-shadow:0 0 18px var(--gold-soft);
+  }
+  .knob-lg .knob-face::after{height:12px;transform-origin:1px 28px;}
+  .knob-lg .knob-label{font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--gold);}
+  .knob-lg .knob-value{font-size:13px;}
+
+  .knob.amber .knob-dial{background:conic-gradient(var(--amber) calc(var(--pct)*3.6deg), var(--track) 0deg);}
+  .knob.amber .knob-face::after{background:var(--amber);}
+
+  /* ---------- TOGGLES / BUTTONS ---------- */
+  .toggle-row{display:flex;gap:8px;align-items:center;}
+  .toggle{
+    font-size:9.5px;letter-spacing:1px;font-weight:700;color:var(--text-dim);
+    border:1px solid rgba(255,255,255,0.14);
+    background:rgba(255,255,255,0.03);
+    border-radius:6px;padding:5px 10px;cursor:pointer;text-transform:uppercase;
+    transition:all .15s ease;
+  }
+  .toggle.on{color:var(--sky);border-color:var(--sky);box-shadow:0 0 10px rgba(56,189,248,0.25);background:rgba(56,189,248,0.08);}
+  .toggle:hover{border-color:var(--gold);}
+  .btn-outline{
+    border:1px solid var(--gold);color:var(--gold);background:transparent;
+    border-radius:8px;padding:10px 14px;font-weight:700;font-size:11px;letter-spacing:2px;
+    text-transform:uppercase;cursor:pointer;transition:all .15s ease;
+  }
+  .btn-outline:hover{background:rgba(201,161,90,0.1);box-shadow:0 0 14px var(--gold-soft);}
+  .btn-outline.block{width:100%;text-align:center;}
+
+  /* ---------- FADERS / SLIDERS ---------- */
+  .hslider{display:flex;flex-direction:column;gap:5px;}
+  .hslider-top{display:flex;justify-content:space-between;font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;}
+  .hslider-track{height:5px;border-radius:4px;background:var(--track);position:relative;}
+  .hslider-fill{height:100%;border-radius:4px;background:linear-gradient(90deg, var(--gold), #e8c98a);}
+  .hslider-handle{
+    position:absolute;top:50%;width:11px;height:11px;border-radius:50%;
+    background:var(--gold);border:2px solid var(--black);transform:translate(-50%,-50%);
+  }
+
+  .vslider-group{display:flex;gap:10px;}
+  .vfader{display:flex;flex-direction:column;align-items:center;gap:6px;width:42px;}
+  .vfader-icon{font-size:14px;opacity:0.85;}
+  .vfader-track{width:5px;height:78px;border-radius:4px;background:var(--track);position:relative;}
+  .vfader-fill{position:absolute;bottom:0;width:100%;border-radius:4px;background:linear-gradient(180deg, #e8c98a, var(--gold));}
+  .vfader-handle{position:absolute;left:50%;width:14px;height:8px;border-radius:3px;background:var(--gold);transform:translateX(-50%);border:1px solid var(--black);}
+  .vfader-name{font-size:8px;letter-spacing:0.5px;color:var(--text-dim);text-transform:uppercase;}
+
+  .vwidth{display:flex;flex-direction:column;align-items:center;gap:6px;}
+  .vwidth-track{width:6px;height:96px;border-radius:4px;background:var(--track);position:relative;}
+  .vwidth-fill{position:absolute;bottom:0;width:100%;border-radius:4px;background:linear-gradient(180deg,var(--sky),#1a5f7a);}
+
+  /* ---------- METERS / BARS ---------- */
+  .bar-meter{display:flex;align-items:flex-end;gap:2px;height:44px;}
+  .bar-meter i{flex:1;border-radius:2px 2px 0 0;background:var(--track);}
+  .bar-meter i.gold{background:linear-gradient(180deg,#e8c98a,var(--gold));}
+  .bar-meter i.sky{background:linear-gradient(180deg,#8fdcfb,var(--sky));}
+  .bar-meter i.amber{background:linear-gradient(180deg,#f2a08e,var(--amber));}
+
+  .glitch-grid{display:flex;gap:3px;height:70px;align-items:flex-end;}
+  .glitch-grid i{flex:1;border-radius:2px;}
+
+  /* ---------- MISC UI CHROME ---------- */
+  .paginator{display:flex;align-items:center;justify-content:center;gap:10px;font-size:10px;color:var(--gold);letter-spacing:1px;}
+  .paginator .arrow{cursor:pointer;opacity:0.7;}
+  .paginator .arrow:hover{opacity:1;}
+  .dots{display:flex;gap:6px;justify-content:center;}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--track);cursor:pointer;}
+  .dot.active{background:var(--sky);}
+
+  .divider{height:1px;background:rgba(255,255,255,0.06);margin:2px 0;}
+
+  .readout{
+    text-align:center;font-size:20px;font-weight:700;color:var(--gold);
+    font-variant-numeric:tabular-nums;
+  }
+  .readout-label{text-align:center;font-size:9px;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;}
+
+  .correlation{display:flex;flex-direction:column;gap:4px;}
+  .correlation-track{height:6px;border-radius:4px;background:linear-gradient(90deg, var(--amber), var(--track) 50%, var(--sky));position:relative;}
+  .correlation-marker{position:absolute;top:-3px;width:2px;height:12px;background:#fff;border-radius:1px;}
+
+  /* ---------- SCENE ART (golden-hour, no neon-night) ---------- */
+  .scene{
+    position:relative;border-radius:8px;overflow:hidden;height:120px;
+    background:linear-gradient(180deg,#3a2b52 0%,#8a4a55 38%,#e8935a 58%,#f5b56a 68%,#1a1418 68%,#0d0b0e 100%);
+  }
+  .scene .sun{
+    position:absolute;left:50%;top:44%;width:58px;height:58px;border-radius:50%;
+    background:radial-gradient(circle at 40% 35%, #ffe6b0, #f2b25a 55%, #e8654a 100%);
+    transform:translate(-50%,-50%);
+    box-shadow:0 0 30px rgba(232,101,74,0.45);
+  }
+  .scene .grid-lines{
+    position:absolute;left:0;right:0;bottom:0;top:68%;
+    background-image:repeating-linear-gradient(90deg, rgba(232,196,138,0.35) 0 1px, transparent 1px 40px);
+    -webkit-mask:linear-gradient(180deg, rgba(0,0,0,0.9), transparent);
+            mask:linear-gradient(180deg, rgba(0,0,0,0.9), transparent);
+  }
+  .scene .horizon-line{position:absolute;left:0;right:0;top:68%;height:1px;background:rgba(245,181,106,0.6);}
+  .scene .skyline{
+    position:absolute;left:0;right:0;bottom:32%;height:20px;
+    background:linear-gradient(90deg,#1c1620 0 8%,transparent 8% 10%,#1c1620 10% 22%,transparent 22% 24%,#1c1620 24% 40%,transparent 40% 42%,#1c1620 42% 60%,transparent 60% 63%,#1c1620 63% 78%,transparent 78% 80%,#1c1620 80% 96%,transparent 96% 100%);
+  }
+  .scene .car{
+    position:absolute;left:50%;bottom:14%;width:46px;height:12px;transform:translateX(-50%);
+    background:#0e0b0d;border-radius:5px 5px 2px 2px;
+    box-shadow:0 0 8px rgba(0,0,0,0.6);
+  }
+  .scene .car::before{
+    content:"";position:absolute;left:9px;right:9px;top:-7px;height:9px;
+    background:#0e0b0d;border-radius:5px 5px 0 0;
+  }
+  .scene .hud{position:absolute;left:8px;bottom:6px;font-size:8px;color:var(--gold);letter-spacing:1px;opacity:0.85;}
+  .scene.tall{height:150px;}
+  .scene .brand-mark{position:absolute;left:10px;top:8px;font-family:Georgia,serif;font-style:italic;font-weight:700;font-size:15px;color:#fff2dd;text-shadow:0 2px 6px rgba(0,0,0,0.5);}
+
+  .pyramid-scene{
+    height:120px;border-radius:8px;background:#0d0d10;position:relative;overflow:hidden;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .pyramid-scene svg{filter:drop-shadow(0 0 8px rgba(56,189,248,0.35));}
+  .pyramid-title{position:absolute;top:8px;left:0;right:0;text-align:center;font-family:Georgia,serif;font-style:italic;font-weight:700;letter-spacing:1px;color:var(--sky);font-size:15px;text-shadow:0 0 12px rgba(56,189,248,0.6);}
+
+  .tunnel-scene{
+    height:100px;border-radius:8px;background:#0d0d10;position:relative;overflow:hidden;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .tunnel-scene .ring{position:absolute;border:1px solid rgba(201,161,90,0.35);border-radius:2px;}
+
+  .waveform{
+    height:96px;border-radius:8px;background:#0d0d10;position:relative;overflow:hidden;
+    display:flex;align-items:center;gap:2px;padding:0 10px;
+  }
+  .waveform i{flex:1;background:var(--gold);border-radius:2px;opacity:0.85;}
+
+  .stereo-scope{
+    height:120px;border-radius:8px;background:#0d0d10;position:relative;overflow:hidden;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .stereo-scope .ring{position:absolute;border:1px solid rgba(56,189,248,0.28);border-radius:50%;}
+  .stereo-scope .cross{position:absolute;background:rgba(56,189,248,0.28);}
+  .stereo-scope .dot{position:absolute;width:6px;height:6px;border-radius:50%;background:var(--sky);box-shadow:0 0 8px var(--sky);}
+
+  .reel-scene{
+    height:120px;border-radius:8px;background:#0d0d10;position:relative;overflow:hidden;
+    display:flex;align-items:center;justify-content:center;gap:14px;
+  }
+  .reel{
+    width:70px;height:70px;border-radius:50%;
+    background:radial-gradient(circle at 40% 35%, #e8c98a, var(--gold) 55%, #7a5f34 100%);
+    position:relative;box-shadow:0 4px 14px rgba(0,0,0,0.5);
+  }
+  .reel::after{content:"";position:absolute;inset:28%;border-radius:50%;background:#141416;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.1);}
+
+  .type-list{display:flex;flex-direction:column;gap:3px;}
+  .type-item{font-size:9.5px;letter-spacing:0.5px;color:var(--text-dim);padding:5px 8px;border-radius:5px;cursor:pointer;text-transform:uppercase;}
+  .type-item.active{background:var(--gold);color:var(--black);font-weight:700;}
+  .type-item:hover:not(.active){background:rgba(255,255,255,0.04);}
+
+  footer{
+    margin-top:30px;padding-top:18px;border-top:1px solid rgba(201,161,90,0.18);
+    display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;
+  }
+  .footer-tags{display:flex;gap:18px;flex-wrap:wrap;font-size:11px;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;}
+  .footer-tags span{display:flex;align-items:center;gap:6px;}
+  .tagline{border:1px solid var(--gold);color:var(--gold);padding:8px 14px;border-radius:8px;font-size:11px;letter-spacing:2px;text-transform:uppercase;}
+
+  @media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <svg width="40" height="40" viewBox="0 0 100 100">
+        <polygon points="50,8 92,88 8,88" fill="none" stroke="#c9a15a" stroke-width="6"/>
+        <polygon points="50,34 74,80 26,80" fill="#c9a15a"/>
+      </svg>
+      <div>
+        <h1>ff360_labs</h1>
+        <p>Synthwave FX Collection — UI Reference</p>
+      </div>
+    </div>
+    <div class="legend">
+      <div class="legend-item"><span class="legend-dot" style="background:var(--gold)"></span><span><span class="legend-name">Primary Accent</span><span class="legend-hex">Metallic Gold #c9a15a</span></span></div>
+      <div class="legend-item"><span class="legend-dot" style="background:var(--amber)"></span><span><span class="legend-name">Warning</span><span class="legend-hex">Warm Amber-Red #e8654a</span></span></div>
+      <div class="legend-item"><span class="legend-dot" style="background:var(--sky)"></span><span><span class="legend-name">Info / Focus</span><span class="legend-hex">Accessible Sky Blue #38bdf8</span></span></div>
+      <div class="legend-item"><span class="legend-dot" style="background:var(--charcoal-2)"></span><span><span class="legend-name">BG / Panels</span><span class="legend-hex">Deep Black · Charcoal</span></span></div>
+    </div>
+  </header>
+
+  <div class="grid">
+
+    <!-- 1. VHS -->
+    <div class="card">
+      <div class="card-eyebrow">1 · Tape Degradation</div>
+      <div class="card-title">VHS</div>
+      <div class="panel">
+        <div class="scene">
+          <div class="brand-mark">VHS</div>
+          <div class="sun"></div>
+          <div class="horizon-line"></div>
+          <div class="grid-lines"></div>
+          <div class="skyline"></div>
+          <div class="car"></div>
+          <div class="hud">6000 · 87910</div>
+        </div>
+        <div class="knob-row">
+          <div class="knob-lg">
+            <div class="knob-dial" style="--pct:56"><div class="knob-face"></div></div>
+            <div class="knob-label">Degrade</div>
+            <div class="knob-value">56%</div>
+          </div>
+          <div class="knob-col">
+            <div class="toggle-row"><span class="tag">ff360_labs</span></div>
+          </div>
+        </div>
+        <div class="knob-row">
+          <div class="knob"><div class="knob-dial" style="--pct:42"><div class="knob-face"></div></div><div class="knob-label">Wow</div><div class="knob-value">42%</div></div>
+          <div class="knob"><div class="knob-dial" style="--pct:38"><div class="knob-face"></div></div><div class="knob-label">Flutter</div><div class="knob-value">38%</div></div>
+          <div class="knob"><div class="knob-dial" style="--pct:28"><div class="knob-face"></div></div><div class="knob-label">Noise</div><div class="knob-value">28%</div></div>
+          <div class="knob"><div class="knob-dial" style="--pct:35"><div class="knob-face"></div></div><div class="knob-label">Hiss</div><div class="knob-value">35%</div></div>
+          <div class="knob"><div class="knob-dial" style="--pct:22"><div class="knob-face"></div></div><div class="knob-label">Dropouts</div><div class="knob-value">22%</div></div>
+        </div>
+        <div class="knob-row">
+          <div class="knob"><div class="knob-dial" style="--pct:45"><div class="knob-face"></div></div><div class="knob-label">Saturate</div><div class="knob-value">45%</div></div>
+          <div class="knob"><div class="knob-dial" style="--pct:26"><div class="knob-face"></div></div><div class="knob-label">Bit Red.</div><div class="knob-value">26%</div></div>
+          <div class="knob"><div class="knob-dial" style="--pct:65"><div class="knob-face"></div></div><div class="knob-label">HF Rolloff</div><div class="knob-value">65%</div></div>
+          <div class="knob"><div class="knob-dial" style="--pct:31"><div class="knob-face"></div></div><div class="knob-label">St. Drift</div><div class="knob-value">31%</div></div>
+          <div class="knob"><div class="knob-dial" style="--pct:19"><div class="knob-face"></div></div><div class="knob-label">Pitch Drift</div><div class="knob-value">19%</div></div>
+        </div>
+        <div class="divider"></div>
+        <div class="paginator"><span class="arrow">◄</span><span>MODE — VHS</span><span class="arrow">►</span></div>
+        <div class="hslider">
+          <div class="hslider-top"><span>Mix</span><span>100%</span></div>
+          <div class="hslider-track"><div class="hslider-fill" style="width:100%"></div><div class="hslider-handle" style="left:100%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. NEON CHORUS -->
+    <div class="card">
+      <div class="card-eyebrow">2 · 80s Stereo Chorus</div>
+      <div class="card-title">Neon Chorus</div>
+      <div class="panel">
+        <div class="pyramid-scene">
+          <div class="pyramid-title">Neon Chorus</div>
+          <svg width="120" height="80" viewBox="0 0 120 80">
+            <polygon points="60,10 100,70 20,70" fill="none" stroke="#38bdf8" stroke-width="2"/>
+            <polygon points="60,28 84,70 36,70" fill="none" stroke="#38bdf8" stroke-width="1.4" opacity="0.6"/>
+            <polygon points="60,42 74,70 46,70" fill="none" stroke="#c9a15a" stroke-width="1.2" opacity="0.7"/>
+          </svg>
+        </div>
+        <div style="display:flex;justify-content:space-between;gap:10px;">
+          <div class="knob-col">
+            <div class="knob"><div class="knob-dial" style="--pct:45"><div class="knob-face"></div></div><div class="knob-label">Rate</div><div class="knob-value">0.45 Hz</div></div>
+            <div class="knob"><div class="knob-dial" style="--pct:64"><div class="knob-face"></div></div><div class="knob-label">Depth</div><div class="knob-value">64%</div></div>
+            <div class="knob"><div class="knob-dial" style="--pct:38"><div class="knob-face"></div></div><div class="knob-label">Detune</div><div class="knob-value">38%</div></div>
+            <div class="knob amber"><div class="knob-dial" style="--pct:29"><div class="knob-face"></div></div><div class="knob-label">Feedback</div><div class="knob-value">29%</div></div>
+          </div>
+          <div class="knob-col">
+            <div class="knob"><div class="knob-dial" style="--pct:55"><div class="knob-face"></div></div><div class="knob-label">Width</div><div class="knob-value">55%</div></div>
+            <div class="knob"><div class="knob-dial" style="--pct:20"><div class="knob-face"></div></div><div class="knob-label">Pre-delay</div><div class="knob-value">20 ms</div></div>
+            <div class="knob"><div class="knob-dial" style="--pct:58"><div class="knob-face"></div></div><div class="knob-label">Mix</div><div class="knob-value">58%</div></div>
+            <div class="toggle on" style="text-align:center;">Bass Mono</div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <button class="btn-outline block">Quad Chorus</button>
+        <div class="dots"><span class="dot active"></span><span class="dot"></span><span class="dot"></span></div>
+      </div>
+    </div>
+
+    <!-- 3. MIDNIGHT REVERB -->
+    <div class="card">
+      <div class="card-eyebrow">3 · Retro Digital Spaces</div>
+      <div class="card-title">Midnight Reverb</div>
+      <div class="panel">
+        <div class="tunnel-scene">
+          <svg width="200" height="90" viewBox="0 0 200 90">
+            <text x="100" y="14" text-anchor="middle" fill="#c9a15a" font-size="12" font-style="italic" font-weight="700" font-family="Georgia,serif">Dark Hall</text>
+            <g stroke="#7a5f34" fill="none" stroke-width="1" opacity="0.7">
+              <polygon points="100,50 10,20 10,80"/>
+              <polygon points="100,50 190,20 190,80"/>
+              <polygon points="100,50 10,20 190,20"/>
+              <polygon points="100,50 10,80 190,80"/>
+            </g>
+          </svg>
+        </div>
+        <div style="display:flex;justify-content:space-between;">
+          <div class="knob-col">
+            <div class="knob"><div class="knob-dial" style="--pct:25"><div class="knob-face"></div></div><div class="knob-label">Pre-delay</div><div class="knob-value">1/4</div></div>
+            <div class="knob"><div class="knob-dial" style="--pct:70"><div class="knob-face"></div></div><div class="knob-label">Decay</div><div class="knob-value">4.2 s</div></div>
+            <div class="knob"><div class="knob-dial" style="--pct:78"><div class="knob-face"></div></div><div class="knob-label">Size</div><div class="knob-value">78%</div></div>
+          </div>
+          <div class="knob-col">
+            <div class="knob"><div class="knob-dial" style="--pct:62"><div class="knob-face"></div></div><div class="knob-label">High Damp</div><div class="knob-value">62%</div></div>
+            <div class="knob"><div class="knob-dial" style="--pct:48"><div class="knob-face"></div></div><div class="knob-label">Low Damp</div><div class="knob-value">48%</div></div>
+            <div class="knob"><div class="knob-dial" style="--pct:84"><div class="knob-face"></div></div><div class="knob-label">Width</div><div class="knob-value">84%</div></div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div style="display:flex;justify-content:space-between;gap:10px;">
+          <div style="flex:1;">
+            <div class="readout-label" style="text-align:left;">Ducking</div>
+            <div class="bar-meter"><i class="gold" style="height:30%"></i><i class="gold" style="height:55%"></i><i class="gold" style="height:38%"></i></div>
+          </div>
+          <div style="flex:1;">
+            <div class="readout-label" style="text-align:left;">Modulation</div>
+            <div class="bar-meter"><i class="sky" style="height:20%"></i><i class="sky" style="height:45%"></i><i class="sky" style="height:30%"></i></div>
+          </div>
+          <div style="flex:1;">
+            <div class="readout-label" style="text-align:left;">Mix</div>
+            <div class="bar-meter"><i class="gold" style="height:65%"></i><i class="gold" style="height:80%"></i><i class="gold" style="height:60%"></i></div>
+          </div>
+        </div>
+        <div class="toggle-row" style="justify-content:space-between;">
+          <button class="btn-outline">Freeze</button>
+          <div class="toggle on">Gated · On</div>
+          <div class="toggle on">Sync · On</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. NEON WIDTH -->
+    <div class="card">
+      <div class="card-eyebrow">4 · Stereo Imaging &amp; Movement</div>
+      <div class="card-title">Neon Width</div>
+      <div class="panel">
+        <div class="stereo-scope">
+          <div class="ring" style="width:100px;height:100px;"></div>
+          <div class="ring" style="width:66px;height:66px;"></div>
+          <div class="cross" style="width:110px;height:1px;"></div>
+          <div class="cross" style="width:1px;height:90px;"></div>
+          <div class="dot" style="left:52%;top:46%;"></div>
+          <div class="dot" style="left:58%;top:52%;opacity:0.6;"></div>
+          <div class="dot" style="left:46%;top:56%;opacity:0.4;"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div style="display:flex;gap:10px;">
+            <div class="knob-col">
+              <div class="knob"><div class="knob-dial" style="--pct:40"><div class="knob-face"></div></div><div class="knob-label">Haas</div><div class="knob-value">2.0 ms</div></div>
+              <div class="knob"><div class="knob-dial" style="--pct:30"><div class="knob-face"></div></div><div class="knob-label">Micro Delay</div><div class="knob-value">16 ms</div></div>
+            </div>
+            <div class="knob-col">
+              <div class="knob"><div class="knob-dial" style="--pct:22"><div class="knob-face"></div></div><div class="knob-label">Detune</div><div class="knob-value">22%</div></div>
+              <div class="knob"><div class="knob-dial" style="--pct:35"><div class="knob-face"></div></div><div class="knob-label">Rotation</div><div class="knob-value">35%</div></div>
+            </div>
+            <div class="knob-col">
+              <div class="knob"><div class="knob-dial" style="--pct:50"><div class="knob-face"></div></div><div class="knob-label">Output</div><div class="knob-value">0.0 dB</div></div>
+            </div>
+          </div>
+          <div class="vwidth">
+            <div class="readout-label">Width</div>
+            <div class="vwidth-track"><div class="vwidth-fill" style="height:80%"></div></div>
+            <div class="knob-value">120%</div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="hslider">
+          <div class="hslider-top"><span>Bass Mono</span><span>120 Hz</span></div>
+          <div class="hslider-track"><div class="hslider-fill" style="width:40%"></div><div class="hslider-handle" style="left:40%"></div></div>
+        </div>
+        <div class="correlation">
+          <div class="hslider-top"><span>Correlation</span><span>-0.42</span></div>
+          <div class="correlation-track"><div class="correlation-marker" style="left:29%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. RETROFX -->
+    <div class="card">
+      <div class="card-eyebrow">5 · Transitions &amp; FX Generator</div>
+      <div class="card-title">RetroFX</div>
+      <div class="panel">
+        <div style="display:flex;gap:10px;">
+          <div class="type-list" style="flex:0 0 74px;">
+            <div class="type-item">Type</div>
+            <div class="type-item active">Riser</div>
+            <div class="type-item">Downlifter</div>
+            <div class="type-item">Impact</div>
+            <div class="type-item">Laser</div>
+            <div class="type-item">Sweep</div>
+            <div class="type-item">Reverse</div>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:8px;">
+            <div class="paginator"><span class="arrow">◄</span><span>Neon Rise 07</span><span class="arrow">►</span></div>
+            <div class="waveform">
+              <i style="height:20%"></i><i style="height:35%"></i><i style="height:55%"></i><i style="height:40%"></i><i style="height:70%"></i><i style="height:50%"></i><i style="height:80%"></i><i style="height:60%"></i><i style="height:90%"></i><i style="height:65%"></i><i style="height:45%"></i><i style="height:30%"></i><i style="height:55%"></i><i style="height:75%"></i><i style="height:40%"></i>
+            </div>
+          </div>
+        </div>
+        <div class="knob-row">
+          <div class="knob"><div class="knob-dial" style="--pct:66"><div class="knob-face"></div></div><div class="knob-label">Length</div><div class="knob-value">2.0 Bars</div></div>
+          <div class="knob"><div class="knob-dial" style="--pct:78"><div class="knob-face"></div></div><div class="knob-label">Intensity</div><div class="knob-value">78%</div></div>
+          <div class="knob amber"><div class="knob-dial" style="--pct:30"><div class="knob-face"></div></div><div class="knob-label">Start Pitch</div><div class="knob-value">-24 st</div></div>
+          <div class="knob"><div class="knob-dial" style="--pct:70"><div class="knob-face"></div></div><div class="knob-label">End Pitch</div><div class="knob-value">+24 st</div></div>
+        </div>
+        <div class="divider"></div>
+        <div class="toggle-row" style="justify-content:space-between;align-items:center;">
+          <div class="toggle on">Beat Sync · 1/4</div>
+          <button class="btn-outline" style="flex:1;">Generate</button>
+        </div>
+        <div class="hslider">
+          <div class="hslider-top"><span>Mix</span><span>100%</span></div>
+          <div class="hslider-track"><div class="hslider-fill" style="width:100%"></div><div class="hslider-handle" style="left:100%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. NIGHTDRIVE -->
+    <div class="card">
+      <div class="card-eyebrow">6 · Generative Atmospheric Ambience</div>
+      <div class="card-title">NightDrive</div>
+      <div class="panel">
+        <div class="scene tall">
+          <div class="brand-mark">NightDrive</div>
+          <div class="sun" style="top:38%;width:66px;height:66px;"></div>
+          <div class="horizon-line"></div>
+          <div class="grid-lines"></div>
+          <div class="skyline"></div>
+          <div class="car"></div>
+        </div>
+        <div class="vslider-group">
+          <div class="vfader"><span class="vfader-icon">🌧</span><div class="vfader-track"><div class="vfader-fill" style="height:35%"></div><div class="vfader-handle" style="bottom:35%"></div></div><span class="vfader-name">Rain</span></div>
+          <div class="vfader"><span class="vfader-icon">〰</span><div class="vfader-track"><div class="vfader-fill" style="height:50%"></div><div class="vfader-handle" style="bottom:50%"></div></div><span class="vfader-name">Road</span></div>
+          <div class="vfader"><span class="vfader-icon">🏙</span><div class="vfader-track"><div class="vfader-fill" style="height:70%"></div><div class="vfader-handle" style="bottom:70%"></div></div><span class="vfader-name">City</span></div>
+          <div class="vfader"><span class="vfader-icon">⚙</span><div class="vfader-track"><div class="vfader-fill" style="height:28%"></div><div class="vfader-handle" style="bottom:28%"></div></div><span class="vfader-name">Engine</span></div>
+          <div class="vfader"><span class="vfader-icon">▤</span><div class="vfader-track"><div class="vfader-fill" style="height:42%"></div><div class="vfader-handle" style="bottom:42%"></div></div><span class="vfader-name">Tape</span></div>
+          <div class="vfader"><span class="vfader-icon">⚡</span><div class="vfader-track"><div class="vfader-fill" style="height:58%"></div><div class="vfader-handle" style="bottom:58%"></div></div><span class="vfader-name">Neon</span></div>
+          <div class="vfader"><span class="vfader-icon">∿</span><div class="vfader-track"><div class="vfader-fill" style="height:33%"></div><div class="vfader-handle" style="bottom:33%"></div></div><span class="vfader-name">Atmos</span></div>
+        </div>
+        <div class="divider"></div>
+        <div class="hslider">
+          <div class="hslider-top"><span>Evolution</span><span>79%</span></div>
+          <div class="hslider-track"><div class="hslider-fill" style="width:79%"></div><div class="hslider-handle" style="left:79%"></div></div>
+        </div>
+        <div class="toggle-row" style="justify-content:space-between;">
+          <div class="toggle on">Sync · On</div>
+          <div class="hslider" style="flex:1;">
+            <div class="hslider-top"><span>Mix</span><span>65%</span></div>
+            <div class="hslider-track"><div class="hslider-fill" style="width:65%"></div><div class="hslider-handle" style="left:65%"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. NEON TAPE STOP -->
+    <div class="card">
+      <div class="card-eyebrow">7 · Musical Tape Stop Effect</div>
+      <div class="card-title">Neon Tape Stop</div>
+      <div class="panel">
+        <div class="reel-scene">
+          <div class="reel"></div>
+          <div class="reel" style="width:50px;height:50px;"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;">
+          <div class="knob-col">
+            <div class="tag">Trigger</div>
+            <div class="toggle">Manual</div>
+            <button class="btn-outline">Stop</button>
+          </div>
+          <div style="text-align:center;">
+            <div class="readout">2.8s</div>
+            <div class="readout-label">Stop Time</div>
+          </div>
+          <div class="knob-col">
+            <div class="toggle">Pitch Curve · Log</div>
+            <div class="knob"><div class="knob-dial" style="--pct:74"><div class="knob-face"></div></div><div class="knob-label">Filter Move</div><div class="knob-value">74%</div></div>
+            <div class="toggle on">Reverse · On</div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="toggle-row" style="justify-content:space-between;">
+          <div class="toggle on">Sync · 1/2</div>
+          <div class="hslider" style="flex:1;">
+            <div class="hslider-top"><span>Mix</span><span>100%</span></div>
+            <div class="hslider-track"><div class="hslider-fill" style="width:100%"></div><div class="hslider-handle" style="left:100%"></div></div>
+          </div>
+          <div class="knob"><div class="knob-dial" style="--pct:50"><div class="knob-face"></div></div><div class="knob-label">Wow</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 8. CYBERPUNK GLITCH -->
+    <div class="card">
+      <div class="card-eyebrow">8 · Beat-Synced Glitch Effects</div>
+      <div class="card-title">Cyberpunk Glitch</div>
+      <div class="panel">
+        <div class="paginator" style="justify-content:space-between;">
+          <span><span class="arrow">◄</span> Stutter <span class="arrow">►</span></span>
+          <span>Sync 1/8</span>
+        </div>
+        <div class="glitch-grid">
+          <i class="sky" style="height:60%"></i><i class="sky" style="height:35%"></i><i class="amber" style="height:80%"></i><i class="amber" style="height:50%"></i><i class="gold" style="height:70%"></i><i class="sky" style="height:20%"></i><i class="amber" style="height:90%"></i><i class="sky" style="height:45%"></i><i class="gold" style="height:30%"></i><i class="amber" style="height:65%"></i><i class="sky" style="height:55%"></i><i class="gold" style="height:40%"></i><i class="amber" style="height:75%"></i><i class="sky" style="height:25%"></i><i class="gold" style="height:60%"></i><i class="amber" style="height:48%"></i>
+        </div>
+        <div style="display:flex;gap:14px;">
+          <div class="hslider" style="flex:1;">
+            <div class="hslider-top"><span>Steps</span><span>16</span></div>
+            <div class="hslider-track"><div class="hslider-fill" style="width:50%"></div><div class="hslider-handle" style="left:50%"></div></div>
+          </div>
+          <div class="hslider" style="flex:1;">
+            <div class="hslider-top"><span>Probability</span><span>78%</span></div>
+            <div class="hslider-track"><div class="hslider-fill" style="width:78%;background:linear-gradient(90deg,var(--amber),#f2a08e);"></div><div class="hslider-handle" style="left:78%;background:var(--amber);"></div></div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="knob-row">
+          <div class="knob"><div class="knob-dial" style="--pct:67"><div class="knob-face"></div></div><div class="knob-label">Intensity</div><div class="knob-value">67%</div></div>
+          <div class="knob"><div class="knob-dial" style="--pct:36"><div class="knob-face"></div></div><div class="knob-label">Bitcrush</div><div class="knob-value">36%</div></div>
+          <div class="knob amber"><div class="knob-dial" style="--pct:44"><div class="knob-face"></div></div><div class="knob-label">Pitch</div><div class="knob-value">-12 st</div></div>
+          <div class="knob"><div class="knob-dial" style="--pct:44"><div class="knob-face"></div></div><div class="knob-label">Gate</div><div class="knob-value">44%</div></div>
+          <div class="knob"><div class="knob-dial" style="--pct:58"><div class="knob-face"></div></div><div class="knob-label">Mix</div><div class="knob-value">58%</div></div>
+        </div>
+        <div style="display:flex;gap:14px;">
+          <div class="hslider" style="flex:1;">
+            <div class="hslider-top"><span>Feedback</span><span>29%</span></div>
+            <div class="hslider-track"><div class="hslider-fill" style="width:29%"></div><div class="hslider-handle" style="left:29%"></div></div>
+          </div>
+          <div class="hslider" style="flex:1;">
+            <div class="hslider-top"><span>Dry / Wet</span><span>78%</span></div>
+            <div class="hslider-track"><div class="hslider-fill" style="width:78%"></div><div class="hslider-handle" style="left:78%"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    <div class="footer-tags">
+      <span>♪ Built for Synthwave</span>
+      <span>VST3</span>
+      <span>AU</span>
+      <span> macOS</span>
+      <span>⊞ Windows</span>
+    </div>
+    <div class="tagline">Always Building Something New</div>
+  </footer>
+
+</div>
+
+<script>
+  // Cosmetic-only interactivity so this reads as a live UI reference, not a static image.
+  document.querySelectorAll('.toggle, .dot, .type-item').forEach(el => {
+    el.addEventListener('click', () => {
+      if(el.classList.contains('dot')){
+        el.parentElement.querySelectorAll('.dot').forEach(d => d.classList.remove('active'));
+        el.classList.add('active');
+      } else if(el.classList.contains('type-item')){
+        el.parentElement.querySelectorAll('.type-item').forEach(d => d.classList.remove('active'));
+        el.classList.add('active');
+      } else {
+        el.classList.toggle('on');
+      }
+    });
+  });
+</script>
+
+</body>
+</html>

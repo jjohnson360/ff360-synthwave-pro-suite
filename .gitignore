@@ -1,0 +1,47 @@
+# Build directories
+build/
+build_*/
+bin/
+out/
+dist/
+CMakeFiles/
+CMakeCache.txt
+*.dir/
+
+# Compiled Binaries and Objects
+*.exe
+*.obj
+*.o
+*.lib
+*.a
+*.dll
+*.so
+*.dylib
+*.pdb
+*.ilk
+*.exp
+*.idb
+
+# IDE & Editor files
+.vs/
+.vscode/
+*.vcxproj*
+!*.vcxproj.filters
+*.sln
+*.suo
+*.user
+*.userosv
+*.userprefs
+*.DS_Store
+.idea/
+*.swp
+*~
+
+# Package & OS Artifacts
+*.zip
+*.tar.gz
+*.pkg
+*.dmg
+.system_generated/
+scratch/
+Thumbs.db
