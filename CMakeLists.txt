@@ -35,7 +35,7 @@ function(add_synthwave_plugin TARGET_NAME PLUGIN_NAME PLUGIN_CODE)
         COPY_PLUGIN_AFTER_BUILD TRUE
         PLUGIN_MANUFACTURER_CODE FF36
         PLUGIN_CODE ${PLUGIN_CODE}
-        FORMATS VST3 Standalone
+        FORMATS VST3 AU Standalone
         PRODUCT_NAME "${PLUGIN_NAME}"
     )
 

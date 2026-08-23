@@ -85,6 +85,16 @@ def create_releases():
                     rel_p = os.path.relpath(full_p, base_dir)
                     mac_zip.write(full_p, arcname=os.path.join("ff360_Synthwave_Suite_v1.0.0-beta", rel_p))
 
+        # Add macOS binaries (VST3/AU) from release_assets
+        mac_bin_dir = "release_assets"
+        abs_bin_dir = os.path.join(base_dir, mac_bin_dir)
+        if os.path.exists(abs_bin_dir):
+            for root, _, files in os.walk(abs_bin_dir):
+                for f in files:
+                    full_p = os.path.join(root, f)
+                    rel_p = os.path.relpath(full_p, abs_bin_dir)
+                    mac_zip.write(full_p, arcname=os.path.join("ff360_Synthwave_Suite_v1.0.0-beta/macOS", rel_p))
+
     print(f"macOS Universal package created at: {mac_zip_path}")
 
 if __name__ == "__main__":
