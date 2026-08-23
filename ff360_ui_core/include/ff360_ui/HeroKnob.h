@@ -71,13 +71,13 @@ public:
 
         // Center readout (0 to 100%)
         g.setColour(juce::Colour(Colors::TextOffWhite));
-        g.setFont(juce::Font(juce::FontOptions().withHeight(15.0f).withStyle("Bold")));
+        g.setFont(juce::Font(15.0f, juce::Font::bold));
         const int pct = static_cast<int>(std::round(m_value * 100.0f));
         g.drawText(juce::String(pct) + m_unit, centreX - innerR, centreY - 10.0f, innerR * 2.0f, 20.0f, juce::Justification::centred);
 
         // Title Label at bottom
         g.setColour(juce::Colour(Colors::MetallicGold));
-        g.setFont(juce::Font(juce::FontOptions().withHeight(11.0f).withStyle("Bold")));
+        g.setFont(juce::Font(11.0f, juce::Font::bold));
         g.drawText(m_title.toUpperCase(), 0, static_cast<int>(bounds.getBottom() - 20.0f), static_cast<int>(bounds.getWidth()), 18, juce::Justification::centred);
     }
 

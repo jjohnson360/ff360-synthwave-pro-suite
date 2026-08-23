@@ -100,7 +100,7 @@ public:
 
         // Scale labels
         g.setColour(juce::Colour(Colors::TextDim));
-        g.setFont(juce::Font(juce::FontOptions().withHeight(8.5f)));
+        g.setFont(juce::Font(8.5f, juce::Font::plain));
         g.drawText("-1", corrBounds.getX() + 2.0f, corrBounds.getY(), 14.0f, corrH, juce::Justification::left);
         g.drawText("0", cMidX - 6.0f, corrBounds.getY(), 12.0f, corrH, juce::Justification::centred);
         g.drawText("+1", corrBounds.getRight() - 16.0f, corrBounds.getY(), 14.0f, corrH, juce::Justification::right);

@@ -33,8 +33,14 @@ CyberpunkGlitchEditor::CyberpunkGlitchEditor(CyberpunkGlitchProcessor& p)
     m_rhythmPanel.addAndMakeVisible(m_divisionBox);
 
     // Hero Probability Knob
-    m_probAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        m_processor.getApvts(), "probability", m_probHeroKnob.getSlider());
+    if (auto* param = m_processor.getApvts().getRawParameterValue("probability")) {
+        m_probHeroKnob.setValue(param->load() * 0.01f, juce::dontSendNotification);
+    }
+    m_probHeroKnob.onValueChanged = [this](float val) {
+        if (auto* param = m_processor.getApvts().getParameter("probability")) {
+            param->setValueNotifyingHost(val);
+        }
+    };
     m_rhythmPanel.addAndMakeVisible(m_probHeroKnob);
 
     // Toggles
@@ -75,7 +81,7 @@ void CyberpunkGlitchEditor::createKnob(const std::string& id, const juce::String
     kc.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     kc.label.setText(name, juce::dontSendNotification);
     kc.label.setJustificationType(juce::Justification::centred);
-    kc.label.setFont(juce::Font(juce::FontOptions().withHeight(10.0f)));
+    kc.label.setFont(juce::Font(10.0f, juce::Font::plain));
     kc.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     kc.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, kc.slider);
@@ -98,15 +104,15 @@ void CyberpunkGlitchEditor::paint(juce::Graphics& g) {
     g.fillRect(bounds);
 
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold));
-    g.setFont(juce::Font(juce::FontOptions().withHeight(20.0f).withStyle("Bold")));
+    g.setFont(juce::Font(20.0f, juce::Font::bold));
     g.drawText("ff360_labs", 24, 16, 120, 24, juce::Justification::left);
 
     g.setColour(juce::Colour(ff360_ui::Colors::TextOffWhite));
-    g.setFont(juce::Font(juce::FontOptions().withHeight(18.0f).withStyle("Bold Italic")));
+    g.setFont(juce::Font(18.0f, juce::Font::bold | juce::Font::italic));
     g.drawText("Cyberpunk Glitch", 140, 17, 180, 24, juce::Justification::left);
 
     g.setColour(juce::Colour(ff360_ui::Colors::TextDim));
-    g.setFont(juce::Font(juce::FontOptions().withHeight(10.0f)));
+    g.setFont(juce::Font(10.0f, juce::Font::plain));
     g.drawText("TEMPO-SYNCED STUTTER & BUFFER GLITCH", 325, 21, 280, 18, juce::Justification::left);
 
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold).withAlpha(0.2f));

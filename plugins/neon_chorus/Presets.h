@@ -5,6 +5,12 @@
 
 namespace ff360 {
 
+struct Preset {
+    std::string name;
+    std::string category;
+    std::string jsonContent;
+};
+
 inline std::vector<Preset> getNeonChorusPresets() {
     return {
         {

@@ -141,4 +141,8 @@ void NeonTapeStopProcessor::setStateInformation(const void* data, int sizeInByte
     }
 }
 
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {
+    return new NeonTapeStopProcessor();
+}
+
 #endif

@@ -133,4 +133,8 @@ void NeonChorusProcessor::setStateInformation(const void* data, int sizeInBytes)
     }
 }
 
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {
+    return new NeonChorusProcessor();
+}
+
 #endif

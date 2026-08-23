@@ -55,7 +55,7 @@ public:
 
         // Labels
         g.setColour(juce::Colour(Colors::TextDim));
-        g.setFont(juce::Font(juce::FontOptions().withHeight(9.0f)));
+        g.setFont(juce::Font(9.0f, juce::Font::plain));
         g.drawText("L", 1.0f, bounds.getHeight() - 14.0f, meterWidth, 12.0f, juce::Justification::centred);
         g.drawText("R", meterWidth + 5.0f, bounds.getHeight() - 14.0f, meterWidth, 12.0f, juce::Justification::centred);
     }

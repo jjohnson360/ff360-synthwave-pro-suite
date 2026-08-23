@@ -83,7 +83,7 @@ void MidnightReverbEditor::createKnob(const std::string& id, const juce::String&
     kc.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     kc.label.setText(name, juce::dontSendNotification);
     kc.label.setJustificationType(juce::Justification::centred);
-    kc.label.setFont(juce::Font(juce::FontOptions().withHeight(10.0f)));
+    kc.label.setFont(juce::Font(10.0f, juce::Font::plain));
     kc.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     kc.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, kc.slider);
@@ -106,15 +106,15 @@ void MidnightReverbEditor::paint(juce::Graphics& g) {
     g.fillRect(bounds);
 
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold));
-    g.setFont(juce::Font(juce::FontOptions().withHeight(20.0f).withStyle("Bold")));
+    g.setFont(juce::Font(20.0f, juce::Font::bold));
     g.drawText("ff360_labs", 24, 16, 120, 24, juce::Justification::left);
 
     g.setColour(juce::Colour(ff360_ui::Colors::TextOffWhite));
-    g.setFont(juce::Font(juce::FontOptions().withHeight(18.0f).withStyle("Bold Italic")));
+    g.setFont(juce::Font(18.0f, juce::Font::bold | juce::Font::italic));
     g.drawText("Midnight Reverb", 140, 17, 160, 24, juce::Justification::left);
 
     g.setColour(juce::Colour(ff360_ui::Colors::TextDim));
-    g.setFont(juce::Font(juce::FontOptions().withHeight(10.0f)));
+    g.setFont(juce::Font(10.0f, juce::Font::plain));
     g.drawText("CINEMATIC RETRO DIGITAL SPACES", 305, 21, 250, 18, juce::Justification::left);
 
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold).withAlpha(0.2f));

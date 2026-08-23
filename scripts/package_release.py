@@ -48,7 +48,16 @@ def create_releases():
         for src_rel, dst_rel in bin_files:
             abs_p = os.path.join(base_dir, src_rel)
             if os.path.exists(abs_p):
-                win_zip.write(abs_p, arcname=os.path.join("ff360_Synthwave_Suite_v1.0.0", dst_rel))
+                win_zip.write(abs_p, arcname=os.path.join("ff360_Synthwave_Suite_v1.0.0-beta", dst_rel))
+
+        # Add compiled VST3 bundles
+        vst_dir = "C:/Program Files/Common Files/VST3/ff360 Labs"
+        if os.path.exists(vst_dir):
+            for root, _, files in os.walk(vst_dir):
+                for f in files:
+                    full_p = os.path.join(root, f)
+                    rel_p = os.path.relpath(full_p, vst_dir)
+                    win_zip.write(full_p, arcname=os.path.join("ff360_Synthwave_Suite_v1.0.0-beta/VST3", rel_p))
 
     print(f"Windows release package created at: {win_zip_path}")
 

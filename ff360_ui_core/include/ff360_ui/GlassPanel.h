@@ -32,7 +32,7 @@ public:
         // Header Title if specified
         if (m_title.isNotEmpty()) {
             g.setColour(juce::Colour(Colors::MetallicGold));
-            g.setFont(juce::Font(juce::FontOptions().withHeight(10.0f).withStyle("Bold")));
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
             g.drawText(m_title.toUpperCase(), 12, 8, static_cast<int>(bounds.getWidth() - 24), 14, juce::Justification::left);
         }
     }

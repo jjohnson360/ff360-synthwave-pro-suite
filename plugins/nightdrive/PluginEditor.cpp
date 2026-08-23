@@ -24,8 +24,14 @@ NightDriveEditor::NightDriveEditor(NightDriveProcessor& p)
     addAndMakeVisible(m_masterPanel);
 
     // Hero Knob
-    m_evolveAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        m_processor.getApvts(), "evolve", m_evolveHeroKnob.getSlider());
+    if (auto* param = m_processor.getApvts().getRawParameterValue("evolve")) {
+        m_evolveHeroKnob.setValue(param->load() * 0.01f, juce::dontSendNotification);
+    }
+    m_evolveHeroKnob.onValueChanged = [this](float val) {
+        if (auto* param = m_processor.getApvts().getParameter("evolve")) {
+            param->setValueNotifyingHost(val);
+        }
+    };
     m_heroPanel.addAndMakeVisible(m_evolveHeroKnob);
 
     // Scale Box
@@ -42,7 +48,7 @@ NightDriveEditor::NightDriveEditor(NightDriveProcessor& p)
 
     // ChordFlow status readout
     m_chordFlowStatus.setText("ChordFlow: Standalone (Fallback)", juce::dontSendNotification);
-    m_chordFlowStatus.setFont(juce::Font(juce::FontOptions().withHeight(9.5f)));
+    m_chordFlowStatus.setFont(juce::Font(9.5f, juce::Font::plain));
     m_chordFlowStatus.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     m_layersPanel.addAndMakeVisible(m_chordFlowStatus);
 
@@ -72,7 +78,7 @@ void NightDriveEditor::createKnob(const std::string& id, const juce::String& nam
     kc.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     kc.label.setText(name, juce::dontSendNotification);
     kc.label.setJustificationType(juce::Justification::centred);
-    kc.label.setFont(juce::Font(juce::FontOptions().withHeight(10.0f)));
+    kc.label.setFont(juce::Font(10.0f, juce::Font::plain));
     kc.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     kc.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, kc.slider);
@@ -95,15 +101,15 @@ void NightDriveEditor::paint(juce::Graphics& g) {
     g.fillRect(bounds);
 
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold));
-    g.setFont(juce::Font(juce::FontOptions().withHeight(20.0f).withStyle("Bold")));
+    g.setFont(juce::Font(20.0f, juce::Font::bold));
     g.drawText("ff360_labs", 24, 16, 120, 24, juce::Justification::left);
 
     g.setColour(juce::Colour(ff360_ui::Colors::TextOffWhite));
-    g.setFont(juce::Font(juce::FontOptions().withHeight(18.0f).withStyle("Bold Italic")));
+    g.setFont(juce::Font(18.0f, juce::Font::bold | juce::Font::italic));
     g.drawText("NightDrive", 140, 17, 140, 24, juce::Justification::left);
 
     g.setColour(juce::Colour(ff360_ui::Colors::TextDim));
-    g.setFont(juce::Font(juce::FontOptions().withHeight(10.0f)));
+    g.setFont(juce::Font(10.0f, juce::Font::plain));
     g.drawText("GENERATIVE SYNTHWAVE AMBIENT BED & TEXTURES", 270, 21, 320, 18, juce::Justification::left);
 
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold).withAlpha(0.2f));
@@ -169,7 +175,7 @@ void NightDriveEditor::timerCallback() {
 
     if (m_processor.isChordFlowActive()) {
         m_chordFlowStatus.setText("ChordFlow: Connected (Live)", juce::dontSendNotification);
-        m_chordFlowStatus.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::AccessibleSkyBlue));
+        m_chordFlowStatus.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::AccessibleSky));
     } else {
         m_chordFlowStatus.setText("ChordFlow: Standalone (Fallback)", juce::dontSendNotification);
         m_chordFlowStatus.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));

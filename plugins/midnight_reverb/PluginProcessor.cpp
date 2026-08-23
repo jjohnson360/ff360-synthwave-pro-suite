@@ -145,4 +145,8 @@ void MidnightReverbProcessor::setStateInformation(const void* data, int sizeInBy
     }
 }
 
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {
+    return new MidnightReverbProcessor();
+}
+
 #endif

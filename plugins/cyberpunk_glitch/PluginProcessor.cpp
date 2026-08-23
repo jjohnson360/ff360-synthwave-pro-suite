@@ -142,4 +142,8 @@ void CyberpunkGlitchProcessor::setStateInformation(const void* data, int sizeInB
     }
 }
 
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {
+    return new CyberpunkGlitchProcessor();
+}
+
 #endif
