@@ -20,57 +20,90 @@ jobs:
             artifact_name: ff360_Synthwave_FX_Suite_v1.0.0-beta_macOS_Universal.zip
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
 
-    # --- Windows Build & Package ---
-    - name: Configure CMake (Windows)
-      if: runner.os == 'Windows'
-      run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
+      # -----------------------------------------------------------
+      # Windows Build, Test, & Package
+      # -----------------------------------------------------------
+      - name: Configure CMake (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
 
-    - name: Build (Windows)
-      if: runner.os == 'Windows'
-      run: cmake --build build --config Release --parallel
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cmake --build build --config Release --parallel
 
-    - name: Package (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        New-Item -ItemType Directory -Force -Path dist_win/Plugins | Out-Null
-        Get-ChildItem -Path build -Recurse -Filter "*.vst3" | Copy-Item -Destination dist_win/Plugins -Recurse -Force
-        Get-ChildItem -Path build -Recurse -Filter "*.exe" | Copy-Item -Destination dist_win/Plugins -Force
-        if (Test-Path manuals) { Copy-Item -Path manuals -Destination dist_win/docs -Recurse -Force }
-        Compress-Archive -Path dist_win/* -DestinationPath ${{ matrix.artifact_name }} -Force
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist_win/Plugins | Out-Null
+          New-Item -ItemType Directory -Force -Path dist_win/docs | Out-Null
+          
+          # Copy VST3 bundles and Standalone executables
+          Get-ChildItem -Path build -Recurse -Filter "*.vst3" | Copy-Item -Destination dist_win/Plugins -Recurse -Force
+          Get-ChildItem -Path build -Recurse -Filter "*.exe" | Copy-Item -Destination dist_win/Plugins -Force
+          
+          # Copy documentation if present
+          if (Test-Path manuals) { 
+            Copy-Item -Path manuals/* -Destination dist_win/docs -Recurse -Force 
+          }
+          if (Test-Path docs) { 
+            Copy-Item -Path docs/* -Destination dist_win/docs -Recurse -Force 
+          }
+          
+          Compress-Archive -Path dist_win/* -DestinationPath ${{ matrix.artifact_name }} -Force
 
-    # --- macOS Universal Build & Package ---
-    - name: Configure CMake (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        cmake -B build \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
-          -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+      # -----------------------------------------------------------
+      # macOS Universal Build, Test, & Package
+      # -----------------------------------------------------------
+      - name: Select Xcode (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
-    - name: Build (macOS)
-      if: runner.os == 'macOS'
-      run: cmake --build build --config Release --parallel
+      - name: Configure CMake (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cmake -B build -G "Xcode" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 
-    - name: Package (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        mkdir -p dist_mac/Plugins
-        find build -type d -name "*.vst3" -exec cp -R {} dist_mac/Plugins/ \;
-        find build -type d -name "*.component" -exec cp -R {} dist_mac/Plugins/ \;
-        mkdir -p dist_mac/docs
-        if [ -d "manuals" ]; then cp -R manuals/* dist_mac/docs/; fi
-        cd dist_mac
-        zip -r -y ../${{ matrix.artifact_name }} Plugins docs
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cmake --build build --config Release --parallel 4
 
-    # --- Upload to Release ---
-    - name: Upload Release Asset
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        gh release upload v1.0.0-beta ${{ matrix.artifact_name }} --clobber
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist_mac/Plugins
+          mkdir -p dist_mac/docs
+
+          # Collect built VST3 and AU (.component) bundles
+          find build -type d -name "*.vst3" -exec cp -R {} dist_mac/Plugins/ \;
+          find build -type d -name "*.component" -exec cp -R {} dist_mac/Plugins/ \;
+
+          # Collect documentation
+          if [ -d "manuals" ]; then cp -R manuals/* dist_mac/docs/ 2>/dev/null || true; fi
+          if [ -d "docs" ]; then cp -R docs/* dist_mac/docs/ 2>/dev/null || true; fi
+
+          # Create zip preserving macOS symlinks and file permissions
+          cd dist_mac
+          zip -r -y ../${{ matrix.artifact_name }} Plugins docs
+
+      # -----------------------------------------------------------
+      # Upload to Release
+      # -----------------------------------------------------------
+      - name: Upload Release Asset
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload v1.0.0-beta ${{ matrix.artifact_name }} --clobber
