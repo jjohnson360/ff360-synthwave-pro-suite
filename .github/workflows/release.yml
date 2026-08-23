@@ -16,26 +16,23 @@ build-macos:
           cmake -B build -G "Ninja" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
-            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
-            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 
       - name: Build (macOS)
-        run: cmake --build build --config Release -- -v
+        run: |
+          cmake --build build --config Release -v
 
       - name: Package macOS Artifacts
         run: |
           mkdir -p dist_mac/Plugins
           mkdir -p dist_mac/docs
 
-          # Collect built VST3 and AU (.component) bundles
           find build -type d -name "*.vst3" -exec cp -R {} dist_mac/Plugins/ \;
           find build -type d -name "*.component" -exec cp -R {} dist_mac/Plugins/ \;
 
-          # Collect documentation
           if [ -d "manuals" ]; then cp -R manuals/* dist_mac/docs/ 2>/dev/null || true; fi
           if [ -d "docs" ]; then cp -R docs/* dist_mac/docs/ 2>/dev/null || true; fi
 
-          # Zip preserving macOS file permissions and symlinks
           cd dist_mac
           zip -r -y ../ff360_Synthwave_FX_Suite_v1.0.0-beta_macOS_Universal.zip Plugins docs
 
