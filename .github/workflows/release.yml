@@ -236,8 +236,8 @@ jobs:
           fi
 
           NOTES_ARGS=()
-          if [ -f "docs/release_notes/macOS_v1.0.0-beta.3.md" ]; then
-            NOTES_ARGS=(--notes-file "docs/release_notes/macOS_v1.0.0-beta.3.md")
+          if [ -f "docs/release_notes/beta_release_notes.md" ]; then
+            NOTES_ARGS=(--notes-file "docs/release_notes/beta_release_notes.md")
           else
             NOTES_ARGS=(--notes "ff360_labs Synthwave Production Suite macOS + Windows Beta Release")
           fi
