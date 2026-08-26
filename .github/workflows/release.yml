@@ -148,14 +148,25 @@ jobs:
             TAG="${TAG}_$(date +%s)"
           fi
 
-          NOTES_ARG=""
+          NOTES_ARGS=()
           if [ -f "docs/release_notes/macOS_v1.0.0-beta.3.md" ]; then
-            NOTES_ARG="--notes-file docs/release_notes/macOS_v1.0.0-beta.3.md"
+            NOTES_ARGS=(--notes-file "docs/release_notes/macOS_v1.0.0-beta.3.md")
           else
-            NOTES_ARG="--notes 'ff360_labs Synthwave Production Suite macOS 12+ Universal VST3 & AU Beta Release'"
+            NOTES_ARGS=(--notes "ff360_labs Synthwave Production Suite macOS 12+ Universal VST3 & AU Beta Release")
+          fi
+
+          # Respect the workflow's prerelease input. A non-prerelease run is
+          # explicitly marked --latest so it actually displaces any older
+          # release for the "Latest release" badge/link on GitHub, instead of
+          # silently losing that slot to whatever non-prerelease was published
+          # most recently (which is how stale builds kept getting served).
+          if [ "${{ github.event.inputs.prerelease }}" = "true" ]; then
+            STATUS_ARGS=(--prerelease)
+          else
+            STATUS_ARGS=(--latest)
           fi
 
           gh release create "$TAG" "$ZIP_NAME" \
             --title "$TITLE" \
-            $NOTES_ARG \
-            --prerelease
+            "${NOTES_ARGS[@]}" \
+            "${STATUS_ARGS[@]}"
