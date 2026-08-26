@@ -42,6 +42,13 @@ MidnightReverbEditor::MidnightReverbEditor(MidnightReverbProcessor& p)
         m_processor.getApvts(), "freeze", m_freezeButton);
     addAndMakeVisible(m_freezeButton);
 
+    // Tempo Sync toggle (pre-delay locks to host tempo)
+    m_syncButton.setButtonText("SYNC");
+    m_syncButton.setClickingTogglesState(true);
+    m_syncAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        m_processor.getApvts(), "synctoggle", m_syncButton);
+    addAndMakeVisible(m_syncButton);
+
     setSize(350, 640);
 }
 
@@ -116,10 +123,11 @@ void MidnightReverbEditor::resized() {
     m_scene.setBounds(inner.removeFromTop(120));
     inner.removeFromTop(16);
     
-    // Algorithm and Freeze row
+    // Algorithm, Sync, and Freeze row
     auto topRow = inner.removeFromTop(24);
     m_algBox.setBounds(topRow.removeFromLeft(120));
     m_freezeButton.setBounds(topRow.removeFromRight(70));
+    m_syncButton.setBounds(topRow.removeFromRight(60).withTrimmedRight(6));
     
     inner.removeFromTop(16);
     

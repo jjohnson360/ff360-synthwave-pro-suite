@@ -31,6 +31,10 @@ private:
     juce::TextButton m_quadButton;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> m_quadAttach;
 
+    // Vintage/Modern character toggle (param exists in the DSP core but previously had no UI control)
+    juce::TextButton m_vintageButton;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> m_vintageAttach;
+
     // Dots for cosmetic UI chrome
     struct DotIndicator : public juce::Component {
         void paint(juce::Graphics& g) override {

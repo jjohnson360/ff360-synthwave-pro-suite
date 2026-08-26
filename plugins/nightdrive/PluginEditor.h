@@ -41,6 +41,12 @@ private:
     juce::ComboBox m_scaleBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> m_scaleAttach;
 
+    // Sidechain duck amount (only audible once a host routes a sidechain signal in)
+    juce::Slider m_scDuckSlider;
+    juce::Label m_scDuckLabel;
+    juce::Label m_scDuckValueLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> m_scDuckAttach;
+
     void createFader(const std::string& id, const juce::String& name);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(NightDriveEditor)

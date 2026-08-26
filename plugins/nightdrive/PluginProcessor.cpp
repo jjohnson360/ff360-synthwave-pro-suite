@@ -5,16 +5,18 @@
 juce::AudioProcessorValueTreeState::ParameterLayout NightDriveProcessor::createParameterLayout() {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
+    // Display names follow the UI mockup's night-drive ambience theme; parameter IDs are
+    // left untouched so existing sessions/automation keep working.
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID{ "dronelevel", 1 }, "Drone Level", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 80.0f,
+        juce::ParameterID{ "dronelevel", 1 }, "Road Hum", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 80.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID{ "granularlevel", 1 }, "Granular Texture", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 60.0f,
+        juce::ParameterID{ "granularlevel", 1 }, "Rain Texture", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 60.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID{ "arplevel", 1 }, "Arp Motion", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 40.0f,
+        juce::ParameterID{ "arplevel", 1 }, "Neon Arp", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 40.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
@@ -22,15 +24,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout NightDriveProcessor::createP
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID{ "density", 1 }, "Grain Density", juce::NormalisableRange<float>(5.0f, 60.0f, 0.1f), 30.0f,
+        juce::ParameterID{ "density", 1 }, "City Density", juce::NormalisableRange<float>(5.0f, 60.0f, 0.1f), 30.0f,
         juce::AudioParameterFloatAttributes().withLabel("gr/s")));
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID{ "filtermove", 1 }, "Filter Movement", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 60.0f,
+        juce::ParameterID{ "filtermove", 1 }, "Engine Movement", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 60.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID{ "reverbwash", 1 }, "Reverb Wash", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 65.0f,
+        juce::ParameterID{ "reverbwash", 1 }, "Atmos Wash", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 65.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
     params.push_back(std::make_unique<juce::AudioParameterChoice>(
@@ -44,16 +46,30 @@ juce::AudioProcessorValueTreeState::ParameterLayout NightDriveProcessor::createP
         juce::ParameterID{ "mix", 1 }, "Mix", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{ "scduck", 1 }, "Sidechain Duck", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 0.0f,
+        juce::AudioParameterFloatAttributes().withLabel("%")));
+
     return { params.begin(), params.end() };
 }
 
 NightDriveProcessor::NightDriveProcessor()
     : AudioProcessor(BusesProperties()
                      .withInput("Input", juce::AudioChannelSet::stereo(), true)
-                     .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
+                     .withOutput("Output", juce::AudioChannelSet::stereo(), true)
+                     .withInput("Sidechain", juce::AudioChannelSet::stereo(), false)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
       m_presets(ff360::getNightDrivePresets()) {
     updateScaleNotes(1); // Natural Minor default
+}
+
+bool NightDriveProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
+    if (layouts.getMainInputChannelSet() != juce::AudioChannelSet::stereo()
+        || layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo()) {
+        return false;
+    }
+    const auto scSet = layouts.getChannelSet(true, 1);
+    return scSet.isDisabled() || scSet == juce::AudioChannelSet::mono() || scSet == juce::AudioChannelSet::stereo();
 }
 
 void NightDriveProcessor::updateScaleNotes(int scaleIndex) {
@@ -89,7 +105,7 @@ void NightDriveProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) 
 
     m_arpPhase = 0.0f;
     m_arpStep = 0;
-    m_samplesUntilArpStep = static_cast<size_t>(sampleRate * 0.25); // 1/16th note at 120bpm
+    m_samplesUntilArpStep = static_cast<size_t>(sampleRate * 0.125); // 1/16th note at 120bpm; retuned once host tempo is known
 }
 
 void NightDriveProcessor::releaseResources() {
@@ -114,6 +130,14 @@ void NightDriveProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
         }
     }
 
+    // Read host tempo so the arp locks to the song, not a fixed internal clock
+    float hostBpm = 120.0f;
+    if (auto* playHead = getPlayHead()) {
+        if (auto pos = playHead->getPosition()) {
+            if (pos->getBpm().hasValue()) hostBpm = static_cast<float>(*pos->getBpm());
+        }
+    }
+
     const float evolveNorm = m_apvts.getRawParameterValue("evolve")->load() * 0.01f;
     const float droneLvl = m_apvts.getRawParameterValue("dronelevel")->load() * 0.01f;
     const float granLvl = m_apvts.getRawParameterValue("granularlevel")->load() * 0.01f;
@@ -123,6 +147,7 @@ void NightDriveProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     const float reverbWash = m_apvts.getRawParameterValue("reverbwash")->load() * 0.01f;
     const int scaleIdx = static_cast<int>(m_apvts.getRawParameterValue("scalelock")->load());
     const float mixVal = m_apvts.getRawParameterValue("mix")->load() * 0.01f;
+    const float scDuckAmt = m_apvts.getRawParameterValue("scduck")->load() * 0.01f;
 
     updateScaleNotes(scaleIdx);
 
@@ -165,10 +190,14 @@ void NightDriveProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     // Filter LFO frequency ~0.1 Hz
     const float lfoInc = ff360::TWO_PI * (0.05f + filterMove * 0.2f) * invSr;
 
+    // 1/16 note length at the host's current tempo (recomputed every block, applied at the next step boundary)
+    const float sixteenthNoteSec = (60.0f / std::max(20.0f, hostBpm)) / 4.0f;
+    const size_t sixteenthNoteSamples = std::max(static_cast<size_t>(1), static_cast<size_t>(sr * sixteenthNoteSec));
+
     for (size_t i = 0; i < static_cast<size_t>(numSamples); ++i) {
         // 1. Synthesize Arp note from scale notes
         if (m_samplesUntilArpStep == 0) {
-            m_samplesUntilArpStep = static_cast<size_t>(sr * 0.125f); // 1/16 note arp
+            m_samplesUntilArpStep = sixteenthNoteSamples; // tempo-synced 1/16 note arp
             m_arpStep = (m_arpStep + 1) % std::max(size_t(1), m_currentScaleNotes.size());
         }
         m_samplesUntilArpStep--;
@@ -214,10 +243,29 @@ void NightDriveProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     // 6. Reverb wash send
     m_reverbWash.processStereo(left, right, static_cast<size_t>(numSamples));
 
-    // 7. Master Mix & Metering
+    // 7. Sidechain ducking: pull the ambient bed down under an external key (e.g. lead/vocal).
+    // Only meaningful when a sidechain input is actually connected — NightDrive generates its
+    // own signal, so unlike Midnight Reverb there's no "self" input to fall back to.
+    auto scBuffer = getBusBuffer(buffer, true, 1);
+    const bool scConnected = scBuffer.getNumChannels() > 0 && scDuckAmt > 0.0f;
+    const float* scLeft = scConnected ? scBuffer.getReadPointer(0) : nullptr;
+    const float* scRight = scConnected ? (scBuffer.getNumChannels() > 1 ? scBuffer.getReadPointer(1) : scLeft) : nullptr;
+
+    // 8. Master Mix & Metering
     for (int i = 0; i < numSamples; ++i) {
-        left[i] *= mixVal;
-        right[i] *= mixVal;
+        float duckGain = 1.0f;
+        if (scConnected) {
+            const float keyAbs = std::max(std::abs(scLeft[i]), std::abs(scRight[i]));
+            if (keyAbs > m_scDuckEnvelope) {
+                m_scDuckEnvelope += (keyAbs - m_scDuckEnvelope) * 0.5f; // fast attack
+            } else {
+                m_scDuckEnvelope += (keyAbs - m_scDuckEnvelope) * (invSr * 12.0f); // ~80-150ms release
+            }
+            duckGain = ff360::clamp(1.0f - (m_scDuckEnvelope * scDuckAmt * 1.5f), 0.0f, 1.0f);
+        }
+
+        left[i] *= mixVal * duckGain;
+        right[i] *= mixVal * duckGain;
     }
 
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));

@@ -20,6 +20,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout RetroFXProcessor::createPara
         juce::ParameterID{ "intensity", 1 }, "Generate Intensity", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 85.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{ "startpitch", 1 }, "Start Pitch", juce::NormalisableRange<float>(-24.0f, 24.0f, 1.0f), -12.0f,
+        juce::AudioParameterFloatAttributes().withLabel("st")));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{ "endpitch", 1 }, "End Pitch", juce::NormalisableRange<float>(-24.0f, 24.0f, 1.0f), 12.0f,
+        juce::AudioParameterFloatAttributes().withLabel("st")));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{ "length", 1 }, "Free Length", juce::NormalisableRange<float>(0.1f, 8.0f, 0.01f, 0.5f), 2.0f,
+        juce::AudioParameterFloatAttributes().withLabel("s")));
+
     params.push_back(std::make_unique<juce::AudioParameterInt>(
         juce::ParameterID{ "seed", 1 }, "Recall Seed", 1, 99999, 42));
 
@@ -97,9 +109,11 @@ void RetroFXProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
 
     ff360::GenerativeParameters p;
     p.syncMode = static_cast<ff360::GenerativeSyncMode>(static_cast<int>(m_apvts.getRawParameterValue("sync")->load()));
-    p.freeDurationSec = 2.0f;
+    p.freeDurationSec = m_apvts.getRawParameterValue("length")->load();
     p.hostBpm = currentBpm;
     p.intensity = m_apvts.getRawParameterValue("intensity")->load() * 0.01f;
+    p.startPitchSemitones = m_apvts.getRawParameterValue("startpitch")->load();
+    p.endPitchSemitones = m_apvts.getRawParameterValue("endpitch")->load();
     p.seed = static_cast<uint32_t>(m_apvts.getRawParameterValue("seed")->load());
     p.mix = m_apvts.getRawParameterValue("mix")->load() * 0.01f;
 

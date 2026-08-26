@@ -23,28 +23,43 @@ private:
     
     struct ReelScene : public ff360_ui::BaseScene {
         float angle = 0.0f;
+        // 1.0 = running at full normal speed, 0.0 = fully stopped (mirrors 1 - controller progress)
+        float speedFactor = 1.0f;
+        bool isStopped = false;
+
         void paintScene(juce::Graphics& g, juce::Rectangle<float> bounds) override {
             juce::ColourGradient bgGrad(juce::Colour(0xFF131316), 0, 0,
                                         juce::Colour(0xFF0D0D10), 0, bounds.getHeight(), false);
             g.setGradientFill(bgGrad);
             g.fillRoundedRectangle(bounds, 8.0f);
-            
+
+            // Hub/spoke colour drifts from gold (running) to amber-red (slowing/stopped)
+            const auto reelColour = juce::Colour(ff360_ui::Colors::MetallicGold)
+                                        .interpolatedWith(juce::Colour(ff360_ui::Colors::WarmAmberRed), 1.0f - speedFactor);
+
             auto drawReel = [&](float cx, float cy, float r) {
                 g.setColour(juce::Colour(0xFF1A1A1E));
                 g.fillEllipse(cx - r, cy - r, r*2, r*2);
-                g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold));
+
+                // Soft red glow ring while fully stopped
+                if (isStopped) {
+                    g.setColour(juce::Colour(ff360_ui::Colors::WarmAmberRed).withAlpha(0.35f));
+                    g.drawEllipse(cx - r - 3.0f, cy - r - 3.0f, (r + 3.0f) * 2.0f, (r + 3.0f) * 2.0f, 2.0f);
+                }
+
+                g.setColour(reelColour);
                 g.drawEllipse(cx - r, cy - r, r*2, r*2, 2.0f);
-                
+
                 juce::Path p;
                 p.addEllipse(cx - 8, cy - 8, 16, 16);
                 p.addLineSegment(juce::Line<float>(cx, cy - r + 4, cx, cy - 12), 2.0f);
                 p.addLineSegment(juce::Line<float>(cx, cy + 12, cx, cy + r - 4), 2.0f);
                 p.addLineSegment(juce::Line<float>(cx - r + 4, cy, cx - 12, cy), 2.0f);
                 p.addLineSegment(juce::Line<float>(cx + 12, cy, cx + r - 4, cy), 2.0f);
-                
+
                 g.fillPath(p, juce::AffineTransform::rotation(angle, cx, cy));
             };
-            
+
             drawReel(bounds.getWidth() * 0.3f, bounds.getHeight() * 0.5f, 40.0f);
             drawReel(bounds.getWidth() * 0.7f, bounds.getHeight() * 0.5f, 40.0f);
         }

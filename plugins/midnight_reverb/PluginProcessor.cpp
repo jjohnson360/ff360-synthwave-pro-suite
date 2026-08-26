@@ -53,9 +53,20 @@ juce::AudioProcessorValueTreeState::ParameterLayout MidnightReverbProcessor::cre
 MidnightReverbProcessor::MidnightReverbProcessor()
     : AudioProcessor(BusesProperties()
                      .withInput("Input", juce::AudioChannelSet::stereo(), true)
-                     .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
+                     .withOutput("Output", juce::AudioChannelSet::stereo(), true)
+                     .withInput("Sidechain", juce::AudioChannelSet::stereo(), false)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
       m_presets(ff360::getMidnightReverbPresets()) {
+}
+
+bool MidnightReverbProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
+    if (layouts.getMainInputChannelSet() != juce::AudioChannelSet::stereo()
+        || layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo()) {
+        return false;
+    }
+    // Sidechain (input bus 1) may be off, mono, or stereo
+    const auto scSet = layouts.getChannelSet(true, 1);
+    return scSet.isDisabled() || scSet == juce::AudioChannelSet::mono() || scSet == juce::AudioChannelSet::stereo();
 }
 
 void MidnightReverbProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
@@ -103,7 +114,17 @@ void MidnightReverbProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     float* left = buffer.getWritePointer(0);
     float* right = (numChannels > 1) ? buffer.getWritePointer(1) : buffer.getWritePointer(0);
 
-    m_reverbEngine.processStereo(left, right, static_cast<size_t>(numSamples));
+    // Duck off the external sidechain input when the host has one routed in;
+    // otherwise ReverbEngine falls back to its own self-ducking behaviour.
+    auto scBuffer = getBusBuffer(buffer, true, 1);
+    const float* scLeft = nullptr;
+    const float* scRight = nullptr;
+    if (scBuffer.getNumChannels() > 0) {
+        scLeft = scBuffer.getReadPointer(0);
+        scRight = (scBuffer.getNumChannels() > 1) ? scBuffer.getReadPointer(1) : scLeft;
+    }
+
+    m_reverbEngine.processStereo(left, right, static_cast<size_t>(numSamples), scLeft, scRight);
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
 }
 

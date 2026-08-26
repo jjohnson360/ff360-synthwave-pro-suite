@@ -15,7 +15,11 @@ public:
     virtual ~IGenerator() = default;
     virtual void prepare(double sampleRate) = 0;
     virtual void reset() = 0;
-    virtual void trigger(uint32_t seed, float durationSec, float intensity) = 0;
+    // startSemitones/endSemitones transpose each generator's own frequency sweep
+    // (its curve shape is unchanged; the whole register shifts and the sweep
+    // width is set by the gap between start and end).
+    virtual void trigger(uint32_t seed, float durationSec, float intensity,
+                         float startSemitones, float endSemitones) = 0;
     virtual void processSample(float& left, float& right, float progress) = 0;
     virtual const char* getName() const noexcept = 0;
 };
@@ -37,6 +41,8 @@ struct GenerativeParameters {
     float evolveRate = 0.5f;     // 0.0 to 1.0
     uint32_t seed = 42;          // Recall seed
     float intensity = 0.8f;      // Macro / intensity
+    float startPitchSemitones = -12.0f;  // Generator sweep register at progress = 0
+    float endPitchSemitones = 12.0f;     // Generator sweep register at progress = 1
     float mix = 1.0f;
 };
 

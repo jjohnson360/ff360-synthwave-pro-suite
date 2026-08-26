@@ -56,8 +56,11 @@ void NeonWidthProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     m_stereoEngine.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_meteringBridge.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_paramManager.prepare(sampleRate);
-    m_latestL.assign(128, 0.0f);
-    m_latestR.assign(128, 0.0f);
+
+    const juce::SpinLock::ScopedLockType sl(m_scopeLock);
+    m_latestL.fill(0.0f);
+    m_latestR.fill(0.0f);
+    m_latestCount = 0;
 }
 
 void NeonWidthProcessor::releaseResources() {
@@ -91,16 +94,28 @@ void NeonWidthProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     m_stereoEngine.processStereo(left, right, static_cast<size_t>(numSamples));
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
 
-    // Capture small sample block for goniometer
-    const size_t take = std::min(static_cast<size_t>(numSamples), static_cast<size_t>(128));
-    m_latestL.resize(take);
-    m_latestR.resize(take);
-    std::copy(left, left + take, m_latestL.begin());
-    std::copy(right, right + take, m_latestR.begin());
+    // Capture a small sample block for the goniometer, under a spinlock so the
+    // message thread can read a consistent snapshot without a torn/reallocating read.
+    {
+        const size_t take = std::min(static_cast<size_t>(numSamples), kScopeBufferSize);
+        const juce::SpinLock::ScopedLockType sl(m_scopeLock);
+        std::copy(left, left + take, m_latestL.begin());
+        std::copy(right, right + take, m_latestR.begin());
+        m_latestCount = take;
+    }
 }
 
 juce::AudioProcessorEditor* NeonWidthProcessor::createEditor() {
     return new NeonWidthEditor(*this);
+}
+
+void NeonWidthProcessor::getLatestScopeBuffers(std::array<float, kScopeBufferSize>& outL,
+                                                std::array<float, kScopeBufferSize>& outR,
+                                                size_t& outCount) const noexcept {
+    const juce::SpinLock::ScopedLockType sl(m_scopeLock);
+    outCount = m_latestCount;
+    std::copy(m_latestL.begin(), m_latestL.begin() + static_cast<long>(outCount), outL.begin());
+    std::copy(m_latestR.begin(), m_latestR.begin() + static_cast<long>(outCount), outR.begin());
 }
 
 int NeonWidthProcessor::getNumPrograms() { return static_cast<int>(m_presets.size()); }

@@ -10,12 +10,14 @@ NightDriveEditor::NightDriveEditor(NightDriveProcessor& p)
     addAndMakeVisible(m_mainPanel);
     addAndMakeVisible(m_scene);
 
-    createFader("dronelevel", "DRONE");
-    createFader("granularlevel", "GRANULAR");
-    createFader("arplevel", "ARP");
-    createFader("density", "DENSITY");
-    createFader("filtermove", "FILTER");
-    createFader("reverbwash", "REVERB");
+    // Fader labels/order follow the UI mockup's ambience theme (Rain / Road / City / Engine / Neon / Atmos).
+    // "Tape" from the mockup has no equivalent layer in this engine, so it's omitted rather than mislabeled.
+    createFader("granularlevel", "RAIN");
+    createFader("dronelevel", "ROAD");
+    createFader("density", "CITY");
+    createFader("filtermove", "ENGINE");
+    createFader("arplevel", "NEON");
+    createFader("reverbwash", "ATMOS");
 
     // Evolve horizontal slider
     m_evolveSlider.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -54,6 +56,25 @@ NightDriveEditor::NightDriveEditor(NightDriveProcessor& p)
     addAndMakeVisible(m_mixSlider);
     addAndMakeVisible(m_mixLabel);
     addAndMakeVisible(m_mixValueLabel);
+
+    // Sidechain duck slider
+    m_scDuckSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    m_scDuckSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    m_scDuckSlider.setColour(juce::Slider::thumbColourId, juce::Colour(ff360_ui::Colors::AccessibleSky));
+    m_scDuckAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        m_processor.getApvts(), "scduck", m_scDuckSlider);
+
+    m_scDuckLabel.setText("SC DUCK", juce::dontSendNotification);
+    m_scDuckLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    m_scDuckLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
+
+    m_scDuckValueLabel.setText("0%", juce::dontSendNotification);
+    m_scDuckValueLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    m_scDuckValueLabel.setJustificationType(juce::Justification::centredRight);
+
+    addAndMakeVisible(m_scDuckSlider);
+    addAndMakeVisible(m_scDuckLabel);
+    addAndMakeVisible(m_scDuckValueLabel);
 
     // Scale Lock
     m_scaleBox.addItem("Major", 1);
@@ -133,7 +154,7 @@ void NightDriveEditor::resized() {
     int faderCount = 6;
     int spacing = (fadersArea.getWidth() - (faderCount * faderW)) / (faderCount - 1);
     
-    const char* fNames[] = {"dronelevel", "granularlevel", "arplevel", "density", "filtermove", "reverbwash"};
+    const char* fNames[] = {"granularlevel", "dronelevel", "density", "filtermove", "arplevel", "reverbwash"};
     for (int i = 0; i < faderCount; ++i) {
         auto& f = m_faders[fNames[i]];
         int x = fadersArea.getX() + i * (faderW + spacing);
@@ -160,6 +181,14 @@ void NightDriveEditor::resized() {
     m_mixLabel.setBounds(mixRow.getX(), mixRow.getY(), 60, 12);
     m_mixValueLabel.setBounds(mixRow.getRight() - 50, mixRow.getY(), 50, 12);
     m_mixSlider.setBounds(mixRow.getX(), mixRow.getY() + 14, mixRow.getWidth(), 6);
+
+    inner.removeFromTop(16);
+
+    // Sidechain duck slider
+    auto scRow = inner.removeFromTop(20);
+    m_scDuckLabel.setBounds(scRow.getX(), scRow.getY(), 60, 12);
+    m_scDuckValueLabel.setBounds(scRow.getRight() - 50, scRow.getY(), 50, 12);
+    m_scDuckSlider.setBounds(scRow.getX(), scRow.getY() + 14, scRow.getWidth(), 6);
 }
 
 #endif

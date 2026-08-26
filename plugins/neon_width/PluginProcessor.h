@@ -4,6 +4,7 @@
 #include "ff360/ParameterManager.h"
 #include "ff360/MeteringBridge.h"
 #include "Presets.h"
+#include <array>
 
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -39,8 +40,12 @@ public:
     ff360::FF360_DSP_StereoEngine& getStereoEngine() { return m_stereoEngine; }
     ff360::FF360_DSP_MeteringBridge& getMeteringBridge() { return m_meteringBridge; }
 
-    const std::vector<float>& getLatestLeftBuffer() const noexcept { return m_latestL; }
-    const std::vector<float>& getLatestRightBuffer() const noexcept { return m_latestR; }
+    // Thread-safe snapshot of the most recent block for the UI goniometer.
+    // Safe to call from the message thread while processBlock() runs concurrently.
+    static constexpr size_t kScopeBufferSize = 128;
+    void getLatestScopeBuffers(std::array<float, kScopeBufferSize>& outL,
+                                std::array<float, kScopeBufferSize>& outR,
+                                size_t& outCount) const noexcept;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
@@ -50,8 +55,10 @@ private:
     ff360::FF360_DSP_ParameterManager m_paramManager;
     ff360::FF360_DSP_MeteringBridge m_meteringBridge;
 
-    std::vector<float> m_latestL;
-    std::vector<float> m_latestR;
+    mutable juce::SpinLock m_scopeLock;
+    std::array<float, kScopeBufferSize> m_latestL{};
+    std::array<float, kScopeBufferSize> m_latestR{};
+    size_t m_latestCount = 0;
 
     std::vector<ff360::Preset> m_presets;
     int m_currentPresetIndex = 0;

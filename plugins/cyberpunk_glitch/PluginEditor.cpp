@@ -37,12 +37,23 @@ CyberpunkGlitchEditor::CyberpunkGlitchEditor(CyberpunkGlitchProcessor& p)
     createKnob("gate", "GATE");
     createKnob("resonance", "RESONANCE");
     createKnob("mix", "MIX");
+    createKnob("scsensitivity", "SC TRIG");
 
     setSize(350, 640);
+    startTimerHz(30);
 }
 
 CyberpunkGlitchEditor::~CyberpunkGlitchEditor() {
+    stopTimer();
     setLookAndFeel(nullptr);
+}
+
+void CyberpunkGlitchEditor::timerCallback() {
+    auto& engine = m_processor.getGlitchEngine();
+    m_scene.stepHistory = engine.getStepHistoryOldestFirst();
+    m_scene.isLive = engine.isGlitching();
+    m_scene.gridProgress = engine.getGridProgress();
+    m_scene.repaint();
 }
 
 void CyberpunkGlitchEditor::createKnob(const std::string& id, const juce::String& name, bool amber) {
@@ -145,13 +156,14 @@ void CyberpunkGlitchEditor::resized() {
     
     inner.removeFromTop(16);
     
-    // Knobs (5 knobs)
+    // Knobs (6 knobs)
     int knobW = 42;
     int knobH = 42;
-    int dx = (inner.getWidth() - (5 * knobW)) / 4;
-    
-    const char* rowK[] = {"bitcrush", "pitch", "gate", "resonance", "mix"};
-    for(int i = 0; i < 5; ++i) {
+    const int numKnobs = 6;
+    int dx = (inner.getWidth() - (numKnobs * knobW)) / (numKnobs - 1);
+
+    const char* rowK[] = {"bitcrush", "pitch", "gate", "resonance", "mix", "scsensitivity"};
+    for(int i = 0; i < numKnobs; ++i) {
         auto& k = m_knobs[rowK[i]];
         int x = inner.getX() + i * (knobW + dx);
         k.slider.setBounds(x, inner.getY(), knobW, knobH);

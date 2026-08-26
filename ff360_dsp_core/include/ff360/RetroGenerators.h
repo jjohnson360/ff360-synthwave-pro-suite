@@ -18,14 +18,18 @@ public:
         m_filterR.configure(BiquadFilter::Type::Bandpass, static_cast<float>(sampleRate), 1000.0f, 3.0f);
     }
     void reset() override { m_filterL.reset(); m_filterR.reset(); }
-    void trigger(uint32_t seed, float /*durSec*/, float intensity) override {
+    void trigger(uint32_t seed, float /*durSec*/, float intensity,
+                float startSemitones, float endSemitones) override {
         m_rng.setSeed(seed);
         m_intensity = intensity;
+        m_pitchMultStart = std::pow(2.0f, startSemitones / 12.0f);
+        m_pitchMultEnd = std::pow(2.0f, endSemitones / 12.0f);
         reset();
     }
     void processSample(float& left, float& right, float progress) override {
-        // Cutoff sweeps from 200 Hz to 16 kHz with exponential curve
-        const float cutoff = 200.0f * std::pow(80.0f, progress);
+        // Cutoff sweeps from 200 Hz to 16 kHz with exponential curve, transposed by the pitch range
+        const float pitchMult = lerp(m_pitchMultStart, m_pitchMultEnd, progress);
+        const float cutoff = 200.0f * std::pow(80.0f, progress) * pitchMult;
         const float sr = static_cast<float>(m_sampleRate);
         m_filterL.configure(BiquadFilter::Type::Bandpass, sr, std::min(cutoff, sr * 0.45f), 2.5f + progress * 2.0f);
         m_filterR.configure(BiquadFilter::Type::Bandpass, sr, std::min(cutoff * 1.05f, sr * 0.45f), 2.5f + progress * 2.0f);
@@ -43,6 +47,8 @@ private:
     BiquadFilter m_filterL, m_filterR;
     FastRandom m_rng;
     float m_intensity = 1.0f;
+    float m_pitchMultStart = 1.0f;
+    float m_pitchMultEnd = 1.0f;
 };
 
 // 2. Pitch Sweep Generator
@@ -50,12 +56,16 @@ class PitchSweepGenerator : public IGenerator {
 public:
     void prepare(double sampleRate) override { m_sampleRate = sampleRate; }
     void reset() override { m_phase = 0.0f; }
-    void trigger(uint32_t /*seed*/, float /*durSec*/, float intensity) override {
+    void trigger(uint32_t /*seed*/, float /*durSec*/, float intensity,
+                float startSemitones, float endSemitones) override {
         m_intensity = intensity;
+        m_pitchMultStart = std::pow(2.0f, startSemitones / 12.0f);
+        m_pitchMultEnd = std::pow(2.0f, endSemitones / 12.0f);
         reset();
     }
     void processSample(float& left, float& right, float progress) override {
-        const float freq = 100.0f * std::pow(20.0f, progress);
+        const float pitchMult = lerp(m_pitchMultStart, m_pitchMultEnd, progress);
+        const float freq = 100.0f * std::pow(20.0f, progress) * pitchMult;
         m_phase += TWO_PI * freq / static_cast<float>(m_sampleRate);
         if (m_phase >= TWO_PI) m_phase -= TWO_PI;
 
@@ -69,6 +79,8 @@ private:
     double m_sampleRate = 44100.0;
     float m_phase = 0.0f;
     float m_intensity = 1.0f;
+    float m_pitchMultStart = 1.0f;
+    float m_pitchMultEnd = 1.0f;
 };
 
 // 3. Laser Generator
@@ -76,13 +88,17 @@ class LaserGenerator : public IGenerator {
 public:
     void prepare(double sampleRate) override { m_sampleRate = sampleRate; }
     void reset() override { m_phase = 0.0f; }
-    void trigger(uint32_t /*seed*/, float /*durSec*/, float intensity) override {
+    void trigger(uint32_t /*seed*/, float /*durSec*/, float intensity,
+                float startSemitones, float endSemitones) override {
         m_intensity = intensity;
+        m_pitchMultStart = std::pow(2.0f, startSemitones / 12.0f);
+        m_pitchMultEnd = std::pow(2.0f, endSemitones / 12.0f);
         reset();
     }
     void processSample(float& left, float& right, float progress) override {
-        // Fast pitch drop: 3000 Hz down to 80 Hz
-        const float freq = 80.0f + 3000.0f * std::pow(1.0f - progress, 4.0f);
+        // Fast pitch drop: 3000 Hz down to 80 Hz, transposed by the pitch range
+        const float pitchMult = lerp(m_pitchMultStart, m_pitchMultEnd, progress);
+        const float freq = (80.0f + 3000.0f * std::pow(1.0f - progress, 4.0f)) * pitchMult;
         m_phase += TWO_PI * freq / static_cast<float>(m_sampleRate);
         if (m_phase >= TWO_PI) m_phase -= TWO_PI;
 
@@ -96,6 +112,8 @@ private:
     double m_sampleRate = 44100.0;
     float m_phase = 0.0f;
     float m_intensity = 1.0f;
+    float m_pitchMultStart = 1.0f;
+    float m_pitchMultEnd = 1.0f;
 };
 
 // 4. Reverse Generator
@@ -106,16 +124,20 @@ public:
         m_filter.configure(BiquadFilter::Type::Lowpass, static_cast<float>(sampleRate), 4000.0f, 1.0f);
     }
     void reset() override { m_phase = 0.0f; m_filter.reset(); }
-    void trigger(uint32_t seed, float /*durSec*/, float intensity) override {
+    void trigger(uint32_t seed, float /*durSec*/, float intensity,
+                float startSemitones, float endSemitones) override {
         m_rng.setSeed(seed);
         m_intensity = intensity;
+        m_pitchMultStart = std::pow(2.0f, startSemitones / 12.0f);
+        m_pitchMultEnd = std::pow(2.0f, endSemitones / 12.0f);
         reset();
     }
     void processSample(float& left, float& right, float progress) override {
-        // Reverse exponential swell
+        // Reverse exponential swell, transposed by the pitch range
+        const float pitchMult = lerp(m_pitchMultStart, m_pitchMultEnd, progress);
         const float env = std::pow(progress, 3.5f) * m_intensity;
         const float n = (m_rng.nextFloat() * 2.0f - 1.0f) * 0.6f;
-        m_phase += TWO_PI * (150.0f + progress * 400.0f) / static_cast<float>(m_sampleRate);
+        m_phase += TWO_PI * (150.0f + progress * 400.0f) * pitchMult / static_cast<float>(m_sampleRate);
         if (m_phase >= TWO_PI) m_phase -= TWO_PI;
 
         const float sig = m_filter.process(n + std::sin(m_phase) * 0.4f) * env;
@@ -129,6 +151,8 @@ private:
     BiquadFilter m_filter;
     FastRandom m_rng;
     float m_intensity = 1.0f;
+    float m_pitchMultStart = 1.0f;
+    float m_pitchMultEnd = 1.0f;
 };
 
 // 5. Impact Generator
@@ -136,14 +160,18 @@ class ImpactGenerator : public IGenerator {
 public:
     void prepare(double sampleRate) override { m_sampleRate = sampleRate; }
     void reset() override { m_phase = 0.0f; }
-    void trigger(uint32_t seed, float /*durSec*/, float intensity) override {
+    void trigger(uint32_t seed, float /*durSec*/, float intensity,
+                float startSemitones, float endSemitones) override {
         m_rng.setSeed(seed);
         m_intensity = intensity;
+        m_pitchMultStart = std::pow(2.0f, startSemitones / 12.0f);
+        m_pitchMultEnd = std::pow(2.0f, endSemitones / 12.0f);
         reset();
     }
     void processSample(float& left, float& right, float progress) override {
-        // Low-end sub drop + noise burst
-        const float subFreq = 40.0f + 120.0f * (1.0f - progress);
+        // Low-end sub drop + noise burst, transposed by the pitch range
+        const float pitchMult = lerp(m_pitchMultStart, m_pitchMultEnd, progress);
+        const float subFreq = (40.0f + 120.0f * (1.0f - progress)) * pitchMult;
         m_phase += TWO_PI * subFreq / static_cast<float>(m_sampleRate);
         if (m_phase >= TWO_PI) m_phase -= TWO_PI;
 
@@ -159,6 +187,8 @@ private:
     float m_phase = 0.0f;
     FastRandom m_rng;
     float m_intensity = 1.0f;
+    float m_pitchMultStart = 1.0f;
+    float m_pitchMultEnd = 1.0f;
 };
 
 // 6. Riser Generator
@@ -166,12 +196,16 @@ class RiserGenerator : public IGenerator {
 public:
     void prepare(double sampleRate) override { m_sampleRate = sampleRate; }
     void reset() override { m_phase1 = 0.0f; m_phase2 = 0.0f; }
-    void trigger(uint32_t /*seed*/, float /*durSec*/, float intensity) override {
+    void trigger(uint32_t /*seed*/, float /*durSec*/, float intensity,
+                float startSemitones, float endSemitones) override {
         m_intensity = intensity;
+        m_pitchMultStart = std::pow(2.0f, startSemitones / 12.0f);
+        m_pitchMultEnd = std::pow(2.0f, endSemitones / 12.0f);
         reset();
     }
     void processSample(float& left, float& right, float progress) override {
-        const float f1 = 220.0f * std::pow(4.0f, progress);
+        const float pitchMult = lerp(m_pitchMultStart, m_pitchMultEnd, progress);
+        const float f1 = 220.0f * std::pow(4.0f, progress) * pitchMult;
         const float f2 = f1 * 1.01f; // Detuned twin
 
         m_phase1 += TWO_PI * f1 / static_cast<float>(m_sampleRate);
@@ -189,6 +223,8 @@ private:
     float m_phase1 = 0.0f;
     float m_phase2 = 0.0f;
     float m_intensity = 1.0f;
+    float m_pitchMultStart = 1.0f;
+    float m_pitchMultEnd = 1.0f;
 };
 
 // 7. Downlifter Generator
@@ -199,16 +235,20 @@ public:
         m_filter.configure(BiquadFilter::Type::Lowpass, static_cast<float>(sampleRate), 12000.0f, 2.0f);
     }
     void reset() override { m_phase = 0.0f; m_filter.reset(); }
-    void trigger(uint32_t seed, float /*durSec*/, float intensity) override {
+    void trigger(uint32_t seed, float /*durSec*/, float intensity,
+                float startSemitones, float endSemitones) override {
         m_rng.setSeed(seed);
         m_intensity = intensity;
+        m_pitchMultStart = std::pow(2.0f, startSemitones / 12.0f);
+        m_pitchMultEnd = std::pow(2.0f, endSemitones / 12.0f);
         reset();
     }
     void processSample(float& left, float& right, float progress) override {
+        const float pitchMult = lerp(m_pitchMultStart, m_pitchMultEnd, progress);
         const float cutoff = 12000.0f * (1.0f - progress * 0.9f);
         m_filter.configure(BiquadFilter::Type::Lowpass, static_cast<float>(m_sampleRate), std::max(60.0f, cutoff), 2.0f);
 
-        const float subFreq = 160.0f * (1.0f - progress * 0.75f);
+        const float subFreq = 160.0f * (1.0f - progress * 0.75f) * pitchMult;
         m_phase += TWO_PI * subFreq / static_cast<float>(m_sampleRate);
         if (m_phase >= TWO_PI) m_phase -= TWO_PI;
 
@@ -225,6 +265,8 @@ private:
     BiquadFilter m_filter;
     FastRandom m_rng;
     float m_intensity = 1.0f;
+    float m_pitchMultStart = 1.0f;
+    float m_pitchMultEnd = 1.0f;
 };
 
 // 8. Digital Sweep Generator
@@ -232,14 +274,18 @@ class DigitalSweepGenerator : public IGenerator {
 public:
     void prepare(double sampleRate) override { m_sampleRate = sampleRate; }
     void reset() override { m_phase = 0.0f; }
-    void trigger(uint32_t /*seed*/, float /*durSec*/, float intensity) override {
+    void trigger(uint32_t /*seed*/, float /*durSec*/, float intensity,
+                float startSemitones, float endSemitones) override {
         m_intensity = intensity;
+        m_pitchMultStart = std::pow(2.0f, startSemitones / 12.0f);
+        m_pitchMultEnd = std::pow(2.0f, endSemitones / 12.0f);
         reset();
     }
     void processSample(float& left, float& right, float progress) override {
-        // Stepped 8-bit retro arpeggio notes
+        // Stepped 8-bit retro arpeggio notes, transposed by the pitch range
+        const float pitchMult = lerp(m_pitchMultStart, m_pitchMultEnd, progress);
         const int noteStep = static_cast<int>(progress * 24.0f); // 2 octaves in 24 steps
-        const float f = 110.0f * std::pow(1.059463f, static_cast<float>(noteStep));
+        const float f = 110.0f * std::pow(1.059463f, static_cast<float>(noteStep)) * pitchMult;
 
         m_phase += TWO_PI * f / static_cast<float>(m_sampleRate);
         if (m_phase >= TWO_PI) m_phase -= TWO_PI;
@@ -257,6 +303,8 @@ private:
     double m_sampleRate = 44100.0;
     float m_phase = 0.0f;
     float m_intensity = 1.0f;
+    float m_pitchMultStart = 1.0f;
+    float m_pitchMultEnd = 1.0f;
 };
 
 // 9. Tape Sweep Generator (Reuses TapeStopController & TapeEngine)
@@ -273,9 +321,13 @@ public:
         m_tapeEngine.reset();
         m_controller.reset();
     }
-    void trigger(uint32_t /*seed*/, float durSec, float intensity) override {
+    void trigger(uint32_t /*seed*/, float durSec, float intensity,
+                float startSemitones, float /*endSemitones*/) override {
         m_intensity = intensity;
         m_durationSec = durSec;
+        // The tape-stop slowdown already sweeps pitch downward on its own; startSemitones
+        // just sets the carrier's starting register (end is governed by the stop curve).
+        m_carrierMult = std::pow(2.0f, startSemitones / 12.0f);
         reset();
 
         TapeStopParameters p;
@@ -288,7 +340,7 @@ public:
     }
     void processSample(float& left, float& right, float /*progress*/) override {
         // Oscillator carrier source through tape engine slowdown
-        m_phase += TWO_PI * 440.0f / static_cast<float>(m_sampleRate);
+        m_phase += TWO_PI * 440.0f * m_carrierMult / static_cast<float>(m_sampleRate);
         if (m_phase >= TWO_PI) m_phase -= TWO_PI;
 
         m_controller.updateAndApply(m_tapeEngine, 1);
@@ -306,6 +358,7 @@ private:
     float m_phase = 0.0f;
     float m_durationSec = 2.0f;
     float m_intensity = 1.0f;
+    float m_carrierMult = 1.0f;
     FF360_DSP_TapeEngine m_tapeEngine;
     FF360_DSP_TapeStopController m_controller;
 };

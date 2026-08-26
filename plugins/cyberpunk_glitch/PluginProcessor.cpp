@@ -43,15 +43,29 @@ juce::AudioProcessorValueTreeState::ParameterLayout CyberpunkGlitchProcessor::cr
         juce::ParameterID{ "mix", 1 }, "Mix", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 50.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{ "scsensitivity", 1 }, "Sidechain Trigger", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 0.0f,
+        juce::AudioParameterFloatAttributes().withLabel("%")));
+
     return { params.begin(), params.end() };
 }
 
 CyberpunkGlitchProcessor::CyberpunkGlitchProcessor()
     : AudioProcessor(BusesProperties()
                      .withInput("Input", juce::AudioChannelSet::stereo(), true)
-                     .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
+                     .withOutput("Output", juce::AudioChannelSet::stereo(), true)
+                     .withInput("Sidechain", juce::AudioChannelSet::stereo(), false)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
       m_presets(ff360::getCyberpunkGlitchPresets()) {
+}
+
+bool CyberpunkGlitchProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
+    if (layouts.getMainInputChannelSet() != juce::AudioChannelSet::stereo()
+        || layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo()) {
+        return false;
+    }
+    const auto scSet = layouts.getChannelSet(true, 1);
+    return scSet.isDisabled() || scSet == juce::AudioChannelSet::mono() || scSet == juce::AudioChannelSet::stereo();
 }
 
 void CyberpunkGlitchProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
@@ -94,13 +108,24 @@ void CyberpunkGlitchProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     params.filterCutoffHz = m_apvts.getRawParameterValue("filter")->load();
     params.filterResonance = m_apvts.getRawParameterValue("resonance")->load();
     params.mix = m_apvts.getRawParameterValue("mix")->load() * 0.01f;
+    params.sidechainSensitivity = m_apvts.getRawParameterValue("scsensitivity")->load() * 0.01f;
 
     m_glitchEngine.setParameters(params);
 
     float* left = buffer.getWritePointer(0);
     float* right = (numChannels > 1) ? buffer.getWritePointer(1) : buffer.getWritePointer(0);
 
-    m_glitchEngine.processStereo(left, right, static_cast<size_t>(numSamples));
+    // Optional external sidechain: forces a fresh glitch slice on each incoming transient
+    // (e.g. "glitch on the kick") when a sidechain is routed in and Sidechain Trigger > 0.
+    auto scBuffer = getBusBuffer(buffer, true, 1);
+    const float* scLeft = nullptr;
+    const float* scRight = nullptr;
+    if (scBuffer.getNumChannels() > 0) {
+        scLeft = scBuffer.getReadPointer(0);
+        scRight = (scBuffer.getNumChannels() > 1) ? scBuffer.getReadPointer(1) : scLeft;
+    }
+
+    m_glitchEngine.processStereo(left, right, static_cast<size_t>(numSamples), scLeft, scRight);
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
 }
 

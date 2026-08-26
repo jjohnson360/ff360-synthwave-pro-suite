@@ -31,6 +31,10 @@ void FF360_DSP_GlitchEngine::reset() {
     m_samplesUntilNextGrid = 0;
     m_filterL.reset();
     m_filterR.reset();
+    m_stepHistory.fill(false);
+    m_stepHistoryPos = 0;
+    m_scEnvelope = 0.0f;
+    m_scWasAbove = false;
 }
 
 size_t FF360_DSP_GlitchEngine::calculateSliceSamples() const noexcept {
@@ -69,16 +73,16 @@ void FF360_DSP_GlitchEngine::triggerManualGlitch() {
 void FF360_DSP_GlitchEngine::evaluateGridTrigger() {
     if (m_params.freeze) {
         m_isGlitching = true;
-        return;
-    }
-
-    if (m_rng.nextFloat() <= m_params.probability) {
+    } else if (m_rng.nextFloat() <= m_params.probability) {
         m_isGlitching = true;
         m_sliceStartPos = m_writePos;
         m_playbackPos = 0.0f;
     } else {
         m_isGlitching = false;
     }
+
+    m_stepHistory[m_stepHistoryPos] = m_isGlitching;
+    m_stepHistoryPos = (m_stepHistoryPos + 1) % kStepHistorySize;
 }
 
 void FF360_DSP_GlitchEngine::process(const float* const* inputs, float* const* outputs, size_t numChannels, size_t numSamples) {
@@ -98,9 +102,15 @@ void FF360_DSP_GlitchEngine::process(const float* const* inputs, float* const* o
     }
 }
 
-void FF360_DSP_GlitchEngine::processStereo(float* left, float* right, size_t numSamples) {
+void FF360_DSP_GlitchEngine::processStereo(float* left, float* right, size_t numSamples,
+                                            const float* keyLeft, const float* keyRight) {
     if (m_captureBufferL.empty()) return;
     const size_t bufSize = m_captureBufferL.size();
+
+    const bool scActive = (keyLeft != nullptr) && (m_params.sidechainSensitivity > 0.001f);
+    // Higher sensitivity lowers the trigger threshold; at 0 it's effectively unreachable.
+    const float scThreshold = lerp(1.0f, 0.04f, clamp(m_params.sidechainSensitivity, 0.0f, 1.0f));
+    const float scRelease = 1.0f / (0.05f * static_cast<float>(m_sampleRate)); // ~50ms release
 
     // Bitcrush parameters (reusing tape engine quantization math)
     const float bits = lerp(16.0f, 4.0f, m_params.bitcrush);
@@ -127,6 +137,28 @@ void FF360_DSP_GlitchEngine::processStereo(float* left, float* right, size_t num
             evaluateGridTrigger();
         }
         m_samplesUntilNextGrid--;
+
+        // 2b. External sidechain transient trigger (e.g. "glitch on the kick"), independent
+        // of the rhythm grid above. Also recorded into the step-grid history so the UI
+        // visualizer reflects sidechain-triggered hits too.
+        if (scActive) {
+            const float keyAbs = std::max(std::abs(keyLeft[i]), std::abs(keyRight[i]));
+            if (keyAbs > m_scEnvelope) {
+                m_scEnvelope += (keyAbs - m_scEnvelope) * 0.6f; // fast attack
+            } else {
+                m_scEnvelope += (keyAbs - m_scEnvelope) * scRelease;
+            }
+
+            const bool aboveNow = m_scEnvelope > scThreshold;
+            if (aboveNow && !m_scWasAbove) {
+                m_isGlitching = true;
+                m_sliceStartPos = m_writePos;
+                m_playbackPos = 0.0f;
+                m_stepHistory[m_stepHistoryPos] = true;
+                m_stepHistoryPos = (m_stepHistoryPos + 1) % kStepHistorySize;
+            }
+            m_scWasAbove = aboveNow;
+        }
 
         // 3. Playback / Stutter synthesis
         float glitchL = inL;

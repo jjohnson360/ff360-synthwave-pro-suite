@@ -456,7 +456,8 @@ void FF360_DSP_ReverbEngine::process(const float* const* inputs, float* const* o
     }
 }
 
-void FF360_DSP_ReverbEngine::processStereo(float* left, float* right, size_t numSamples) {
+void FF360_DSP_ReverbEngine::processStereo(float* left, float* right, size_t numSamples,
+                                            const float* keyLeft, const float* keyRight) {
     const float sr = static_cast<float>(m_sampleRate);
     const float invSr = 1.0f / sr;
 
@@ -486,8 +487,12 @@ void FF360_DSP_ReverbEngine::processStereo(float* left, float* right, size_t num
         const float inL = left[i];
         const float inR = right[i];
 
-        // 1. Instant Ducking detector: fast attack (within buffer), release ~150ms
-        const float inAbs = std::max(std::abs(inL), std::abs(inR));
+        // 1. Instant Ducking detector: fast attack (within buffer), release ~150ms.
+        // Keyed off the external sidechain input when one is connected, otherwise
+        // off the reverb's own dry input (self-ducking, the original behaviour).
+        const float keyL = keyLeft ? keyLeft[i] : inL;
+        const float keyR = keyRight ? keyRight[i] : inR;
+        const float inAbs = std::max(std::abs(keyL), std::abs(keyR));
         if (inAbs > m_duckEnvelope) {
             m_duckEnvelope += (inAbs - m_duckEnvelope) * 0.5f; // very fast attack
         } else {

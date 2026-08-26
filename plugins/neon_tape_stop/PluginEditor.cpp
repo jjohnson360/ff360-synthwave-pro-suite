@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include <cmath>
 
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 
@@ -55,12 +56,18 @@ NeonTapeStopEditor::~NeonTapeStopEditor() {
 }
 
 void NeonTapeStopEditor::timerCallback() {
-    // Animate reels based on trigger state
-    bool isTriggered = m_triggerBtn.getToggleState();
-    if (!isTriggered) {
-        m_scene.angle += 0.05f; // Normal spinning
-        m_scene.repaint();
-    }
+    // Drive the reel animation from the real tape-stop state machine rather than
+    // a fixed spin rate, so the reels visually slow down / brake / spin back up
+    // in sync with what the DSP is actually doing to the audio.
+    using ff360::TapeStopState;
+    auto& controller = m_processor.getController();
+    const float progress = controller.getProgress(); // 0 = running normally, 1 = fully stopped
+    const float speedFactor = 1.0f - progress;
+
+    m_scene.speedFactor = speedFactor;
+    m_scene.isStopped = (controller.getState() == TapeStopState::Stopped);
+    m_scene.angle = std::fmod(m_scene.angle + 0.05f * speedFactor, juce::MathConstants<float>::twoPi);
+    m_scene.repaint();
 }
 
 void NeonTapeStopEditor::createKnob(const std::string& id, const juce::String& name) {

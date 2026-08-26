@@ -60,6 +60,10 @@ private:
     juce::TextButton m_freezeButton;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> m_freezeAttach;
 
+    // Tempo Sync toggle for pre-delay (param exists in the DSP core but previously had no UI control)
+    juce::TextButton m_syncButton;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> m_syncAttach;
+
     void createKnob(const std::string& id, const juce::String& name);
     void createFader(const std::string& id, const juce::String& name, const juce::Colour& accentColour);
 

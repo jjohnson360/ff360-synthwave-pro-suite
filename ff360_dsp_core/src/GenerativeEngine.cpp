@@ -73,7 +73,8 @@ void FF360_DSP_GenerativeEngine::trigger(uint32_t seed) {
     m_isPlaying = true;
 
     if (m_activeGenerator) {
-        m_activeGenerator->trigger(seed, durSec, m_params.intensity);
+        m_activeGenerator->trigger(seed, durSec, m_params.intensity,
+                                   m_params.startPitchSemitones, m_params.endPitchSemitones);
     }
 }
 

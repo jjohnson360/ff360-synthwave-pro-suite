@@ -28,7 +28,14 @@ NeonChorusEditor::NeonChorusEditor(NeonChorusProcessor& p)
     m_quadAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         m_processor.getApvts(), "quad", m_quadButton);
     addAndMakeVisible(m_quadButton);
-    
+
+    // Vintage/Modern character toggle
+    m_vintageButton.setButtonText("Vintage");
+    m_vintageButton.setClickingTogglesState(true);
+    m_vintageAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        m_processor.getApvts(), "vintage", m_vintageButton);
+    addAndMakeVisible(m_vintageButton);
+
     addAndMakeVisible(m_d1);
     addAndMakeVisible(m_d2);
     addAndMakeVisible(m_d3);
@@ -124,9 +131,13 @@ void NeonChorusEditor::resized() {
     // Divider
     // (We could draw a line here in paint, but leaving space is fine)
     
-    // Quad Chorus Button
+    // Quad Chorus + Vintage/Modern buttons, side by side
     auto btnArea = inner.removeFromTop(36);
-    m_quadButton.setBounds(btnArea.withSizeKeepingCentre(btnArea.getWidth(), 36));
+    int btnGap = 8;
+    int btnW = (btnArea.getWidth() - btnGap) / 2;
+    m_quadButton.setBounds(btnArea.removeFromLeft(btnW));
+    btnArea.removeFromLeft(btnGap);
+    m_vintageButton.setBounds(btnArea);
     
     inner.removeFromTop(16);
     

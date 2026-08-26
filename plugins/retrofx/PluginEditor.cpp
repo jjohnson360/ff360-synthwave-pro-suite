@@ -38,6 +38,9 @@ RetroFXEditor::RetroFXEditor(RetroFXProcessor& p)
     addAndMakeVisible(m_syncBox);
 
     createKnob("intensity", "INTENSITY");
+    createKnob("startpitch", "START PITCH");
+    createKnob("endpitch", "END PITCH");
+    createKnob("length", "LENGTH");
     createKnob("seed", "SEED");
 
     // Mix fader
@@ -127,18 +130,24 @@ void RetroFXEditor::resized() {
     m_mixSlider.setBounds(rightFader.withTrimmedTop(16).withTrimmedBottom(20).withWidth(20).withX(rightFader.getX() + 10));
     m_mixLabel.setBounds(rightFader.getX(), m_mixSlider.getBottom() + 4, rightFader.getWidth(), 14);
     
-    // Knobs
+    // Knobs: row 1 = Intensity / Start Pitch / End Pitch, row 2 = Length / Seed
     int knobW = 42;
     int knobH = 42;
-    int dx = (controls.getWidth() - (2 * knobW)) / 3;
-    
-    auto& ki = m_knobs["intensity"];
-    ki.slider.setBounds(controls.getX() + dx, controls.getY() + 30, knobW, knobH);
-    ki.label.setBounds(ki.slider.getX() - 10, ki.slider.getBottom(), knobW + 20, 14);
-    
-    auto& ks = m_knobs["seed"];
-    ks.slider.setBounds(controls.getX() + 2*dx + knobW, controls.getY() + 30, knobW, knobH);
-    ks.label.setBounds(ks.slider.getX() - 10, ks.slider.getBottom(), knobW + 20, 14);
+
+    auto layoutRow = [&](const char* const* ids, int count, int y) {
+        int dx = (controls.getWidth() - (count * knobW)) / (count + 1);
+        for (int i = 0; i < count; ++i) {
+            auto& k = m_knobs[ids[i]];
+            int x = controls.getX() + dx + i * (knobW + dx);
+            k.slider.setBounds(x, y, knobW, knobH);
+            k.label.setBounds(x - 10, k.slider.getBottom(), knobW + 20, 14);
+        }
+    };
+
+    const char* row1[] = { "intensity", "startpitch", "endpitch" };
+    const char* row2[] = { "length", "seed" };
+    layoutRow(row1, 3, controls.getY() + 6);
+    layoutRow(row2, 2, controls.getY() + 6 + knobH + 28);
     
     // Generate Button
     inner.removeFromTop(20);

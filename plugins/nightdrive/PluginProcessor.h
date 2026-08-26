@@ -20,6 +20,7 @@ public:
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) override;
+    bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
@@ -69,6 +70,10 @@ private:
     // Scale / Chord table
     bool m_chordFlowDetected = false;
     std::vector<int> m_currentScaleNotes;
+
+    // Sidechain ducking envelope (only meaningful when a sidechain input is connected;
+    // NightDrive generates its own signal, so there's no "self" key to fall back to)
+    float m_scDuckEnvelope = 0.0f;
 
     std::vector<ff360::Preset> m_presets;
     int m_currentPresetIndex = 0;

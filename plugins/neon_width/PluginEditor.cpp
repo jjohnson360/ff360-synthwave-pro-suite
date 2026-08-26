@@ -8,7 +8,7 @@ NeonWidthEditor::NeonWidthEditor(NeonWidthProcessor& p)
     setLookAndFeel(&m_lookAndFeel);
 
     addAndMakeVisible(m_mainPanel);
-    addAndMakeVisible(m_scene);
+    addAndMakeVisible(m_scope);
 
     createKnob("haas", "HAAS");
     createKnob("microdelay", "MICRO DELAY");
@@ -39,10 +39,21 @@ NeonWidthEditor::NeonWidthEditor(NeonWidthProcessor& p)
     addAndMakeVisible(m_bassMonoValueLabel);
 
     setSize(350, 640);
+    startTimerHz(30);
 }
 
 NeonWidthEditor::~NeonWidthEditor() {
+    stopTimer();
     setLookAndFeel(nullptr);
+}
+
+void NeonWidthEditor::timerCallback() {
+    std::array<float, NeonWidthProcessor::kScopeBufferSize> left{}, right{};
+    size_t count = 0;
+    m_processor.getLatestScopeBuffers(left, right, count);
+
+    const auto metrics = m_processor.getStereoEngine().getMetrics();
+    m_scope.updateData(metrics.phaseCorrelation, metrics.balance, left.data(), right.data(), count);
 }
 
 void NeonWidthEditor::createKnob(const std::string& id, const juce::String& name) {
@@ -108,8 +119,8 @@ void NeonWidthEditor::resized() {
     m_mainPanel.setBounds(bounds);
     auto inner = bounds.reduced(14);
     
-    // Scene
-    m_scene.setBounds(inner.removeFromTop(120));
+    // Live goniometer / phase correlation scope
+    m_scope.setBounds(inner.removeFromTop(120));
     inner.removeFromTop(16);
     
     auto mainControls = inner.removeFromTop(250);

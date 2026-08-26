@@ -116,7 +116,11 @@ public:
     const ReverbParameters& getParameters() const noexcept { return m_params; }
 
     void process(const float* const* inputs, float* const* outputs, size_t numChannels, size_t numSamples);
-    void processStereo(float* left, float* right, size_t numSamples);
+    // keyLeft/keyRight optionally key the ducking envelope off an external sidechain
+    // signal instead of the reverb's own input; pass nullptr for the previous
+    // self-ducking-only behaviour.
+    void processStereo(float* left, float* right, size_t numSamples,
+                       const float* keyLeft = nullptr, const float* keyRight = nullptr);
 
 private:
     double m_sampleRate = 44100.0;
