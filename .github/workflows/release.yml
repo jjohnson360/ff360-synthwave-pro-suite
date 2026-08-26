@@ -1,4 +1,4 @@
-name: Build and Release macOS Universal
+name: Build and Release (macOS + Windows)
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
       release_title:
         description: 'Release Title'
         required: true
-        default: 'v1.0.0-beta.3 — macOS 12+ Universal VST3 & AU Release'
+        default: 'v1.0.0-beta.3 — macOS 12+ Universal & Windows x64 VST3/AU Release'
       prerelease:
         description: 'Mark as pre-release'
         type: boolean
@@ -133,15 +133,102 @@ jobs:
           path: ${{ env.ZIP_NAME }}
           if-no-files-found: error
 
+  build-windows:
+    name: Build Windows x64 (VST3)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Configure CMake (Windows x64)
+        run: cmake -B build -A x64 -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build (Windows x64)
+        run: cmake --build build --config Release --parallel
+
+      - name: Run Core DSP Unit Tests & Benchmarks
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Confirm Bundle Directory Structures (Pre-package)
+        shell: bash
+        run: |
+          echo "=== Verifying VST3 Bundle Structure ==="
+          find build -type d -name "*.vst3" | while read bundle; do
+            echo "Checking bundle: $bundle"
+            test -d "$bundle" || { echo "FAIL: not a directory bundle: $bundle"; exit 1; }
+            binary=$(find "$bundle" -type f -iname "*.vst3" 2>/dev/null | head -n 1)
+            test -n "$binary" || { echo "FAIL: missing Windows binary inside $bundle"; exit 1; }
+          done
+
+      - name: Stage Plugins
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist_win/Plugins | Out-Null
+          New-Item -ItemType Directory -Force -Path dist_win/docs | Out-Null
+
+          Get-ChildItem -Path build -Recurse -Directory -Filter *.vst3 | ForEach-Object {
+            Copy-Item -Recurse -Force $_.FullName "dist_win/Plugins/"
+          }
+
+          if (Test-Path "manuals") { Copy-Item -Recurse -Force manuals dist_win/docs/ }
+          if (Test-Path "docs") { Copy-Item -Recurse -Force docs dist_win/docs/ }
+
+      - name: Create Zip Archive
+        shell: pwsh
+        run: |
+          $tagName = "${{ github.event.inputs.tag_name }}"
+          if ([string]::IsNullOrEmpty($tagName)) { $tagName = "v1.0.0-beta.3" }
+          $zipName = "ff360_Synthwave_FX_Suite_${tagName}_Windows_x64.zip"
+          Add-Content -Path $env:GITHUB_ENV -Value "ZIP_NAME=$zipName"
+          Compress-Archive -Path dist_win/Plugins, dist_win/docs -DestinationPath $zipName -Force
+
+      - name: Round-Trip Zip Verification
+        shell: pwsh
+        run: |
+          $verifyDir = "zip_verify"
+          Expand-Archive -Path $env:ZIP_NAME -DestinationPath $verifyDir -Force
+          $bundles = Get-ChildItem -Path $verifyDir -Recurse -Directory -Filter *.vst3
+          if ($bundles.Count -eq 0) {
+            Write-Error "FAIL: no .vst3 bundles found in zip"
+            exit 1
+          }
+          foreach ($b in $bundles) {
+            Write-Host "Checking unzipped bundle: $($b.FullName)"
+          }
+          Remove-Item -Recurse -Force $verifyDir
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-x64-Plugins
+          path: ${{ env.ZIP_NAME }}
+          if-no-files-found: error
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
       - name: Create Brand-New GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.event.inputs.tag_name || 'v1.0.0-beta.3' }}"
-          TITLE="${{ github.event.inputs.release_title || 'v1.0.0-beta.3 — macOS 12+ Universal VST3 & AU Release' }}"
+          TITLE="${{ github.event.inputs.release_title || 'v1.0.0-beta.3 — macOS 12+ Universal & Windows x64 VST3/AU Release' }}"
 
           echo "Creating brand-new GitHub Release: $TAG ($TITLE)"
-          
+
           # Check if tag already exists to prevent clobbering an existing release
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists; creating timestamped unique tag..."
@@ -152,7 +239,7 @@ jobs:
           if [ -f "docs/release_notes/macOS_v1.0.0-beta.3.md" ]; then
             NOTES_ARGS=(--notes-file "docs/release_notes/macOS_v1.0.0-beta.3.md")
           else
-            NOTES_ARGS=(--notes "ff360_labs Synthwave Production Suite macOS 12+ Universal VST3 & AU Beta Release")
+            NOTES_ARGS=(--notes "ff360_labs Synthwave Production Suite macOS + Windows Beta Release")
           fi
 
           # Respect the workflow's prerelease input. A non-prerelease run is
@@ -166,7 +253,11 @@ jobs:
             STATUS_ARGS=(--latest)
           fi
 
-          gh release create "$TAG" "$ZIP_NAME" \
+          mapfile -t ASSETS < <(find artifacts -type f -name "*.zip")
+          echo "Attaching assets:"
+          printf '  %s\n' "${ASSETS[@]}"
+
+          gh release create "$TAG" "${ASSETS[@]}" \
             --title "$TITLE" \
             "${NOTES_ARGS[@]}" \
             "${STATUS_ARGS[@]}"
