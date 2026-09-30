@@ -38,6 +38,9 @@ void FF360_DSP_MeteringBridge::reset() {
     m_tpHistoryR.fill(0.0f);
 
     m_lraShortBlocks.clear();
+    m_lraShortBlocks.reserve(kMaxLraBlocks + 1);
+    m_lraScratch.reserve(kMaxLraBlocks + 1);
+    m_lraDirty = true;
     m_lraSampleCounter = 0;
     m_lraBlockSum = 0.0;
 
@@ -127,9 +130,10 @@ void FF360_DSP_MeteringBridge::processStereo(const float* left, const float* rig
             // Absolute gate post Phase-10: -70 dBFS
             if (blockDb > -70.0f) {
                 m_lraShortBlocks.push_back(blockDb);
-                if (m_lraShortBlocks.size() > 600) { // keep last 60 seconds
+                if (m_lraShortBlocks.size() > kMaxLraBlocks) { // keep last 60 seconds
                     m_lraShortBlocks.erase(m_lraShortBlocks.begin());
                 }
+                m_lraDirty = true;
             }
             m_lraBlockSum = 0.0;
             m_lraSampleCounter = 0;
@@ -149,7 +153,10 @@ void FF360_DSP_MeteringBridge::processStereo(const float* left, const float* rig
     m_levels.vuL = gainToDb(m_vuStateL);
     m_levels.vuR = gainToDb(m_vuStateR);
 
-    updateLra();
+    if (m_lraDirty) {
+        updateLra();
+        m_lraDirty = false;
+    }
 }
 
 void FF360_DSP_MeteringBridge::updateLra() {
@@ -166,8 +173,8 @@ void FF360_DSP_MeteringBridge::updateLra() {
     const float meanDb = 10.0f * std::log10(static_cast<float>(sum / m_lraShortBlocks.size()));
     const float relativeGateThreshold = meanDb - 10.0f;
 
-    std::vector<float> gatedBlocks;
-    gatedBlocks.reserve(m_lraShortBlocks.size());
+    auto& gatedBlocks = m_lraScratch; // reserved in prepare()
+    gatedBlocks.clear();
     for (float db : m_lraShortBlocks) {
         if (db >= relativeGateThreshold) {
             gatedBlocks.push_back(db);

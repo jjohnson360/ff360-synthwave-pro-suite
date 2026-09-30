@@ -105,6 +105,8 @@ private:
     // Resonant Filter
     BiquadFilter m_filterL;
     BiquadFilter m_filterR;
+    FrequencyGlide m_cutoffGlide;  // automated cutoff moves smoothly (see FrequencyGlide)
+    void configureFilter() noexcept;
 
     // PRNG
     FastRandom m_rng;

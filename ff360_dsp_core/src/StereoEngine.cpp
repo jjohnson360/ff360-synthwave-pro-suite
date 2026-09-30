@@ -23,7 +23,7 @@ void FF360_DSP_StereoEngine::prepare(double sampleRate, size_t maxBlockSize) {
     m_corrBufferL.assign(m_corrWindowSize, 0.0f);
     m_corrBufferR.assign(m_corrWindowSize, 0.0f);
 
-    updateFilters();
+    setParameters(m_params); // crossover targets at the new rate
     reset();
 }
 
@@ -43,6 +43,11 @@ void FF360_DSP_StereoEngine::reset() {
     m_freqHpL1.reset(); m_freqHpL2.reset();
     m_freqHpR1.reset(); m_freqHpR2.reset();
 
+    // Start at the targets rather than gliding from old values
+    m_bassGlide.snap();
+    m_freqGlide.snap();
+    updateFilters();
+
     std::fill(m_corrBufferL.begin(), m_corrBufferL.end(), 0.0f);
     std::fill(m_corrBufferR.begin(), m_corrBufferR.end(), 0.0f);
     m_corrWritePos = 0;
@@ -55,6 +60,9 @@ void FF360_DSP_StereoEngine::reset() {
 
 void FF360_DSP_StereoEngine::setParameters(const StereoParameters& params) noexcept {
     m_params = params;
+    // Targets only: processStereo glides the crossovers there
+    m_bassGlide.setTarget(std::max(20.0f, m_params.bassMonoCutoffHz));
+    m_freqGlide.setTarget(clamp(m_params.freqWidthCrossoverHz, 100.0f, static_cast<float>(m_sampleRate) * 0.45f));
     updateFilters();
 }
 
@@ -62,7 +70,7 @@ void FF360_DSP_StereoEngine::updateFilters() {
     const float sr = static_cast<float>(m_sampleRate);
 
     // Bass mono crossover
-    const float bassCutoff = std::max(20.0f, m_params.bassMonoCutoffHz);
+    const float bassCutoff = m_bassGlide.current;
     m_bassLpL1.configure(BiquadFilter::Type::Lowpass, sr, bassCutoff, 0.7071f);
     m_bassLpL2.configure(BiquadFilter::Type::Lowpass, sr, bassCutoff, 0.7071f);
     m_bassLpR1.configure(BiquadFilter::Type::Lowpass, sr, bassCutoff, 0.7071f);
@@ -74,7 +82,7 @@ void FF360_DSP_StereoEngine::updateFilters() {
     m_bassHpR2.configure(BiquadFilter::Type::Highpass, sr, bassCutoff, 0.7071f);
 
     // Frequency-dependent width crossover
-    const float freqCutoff = clamp(m_params.freqWidthCrossoverHz, 100.0f, sr * 0.45f);
+    const float freqCutoff = m_freqGlide.current;
     m_freqLpL1.configure(BiquadFilter::Type::Lowpass, sr, freqCutoff, 0.7071f);
     m_freqLpL2.configure(BiquadFilter::Type::Lowpass, sr, freqCutoff, 0.7071f);
     m_freqLpR1.configure(BiquadFilter::Type::Lowpass, sr, freqCutoff, 0.7071f);
@@ -120,6 +128,13 @@ void FF360_DSP_StereoEngine::processStereo(float* left, float* right, size_t num
     const float detuneInc = TWO_PI * 0.25f * invSr;
 
     for (size_t i = 0; i < numSamples; ++i) {
+        if (i % FrequencyGlide::kUpdateInterval == 0) {
+            const bool bassMoved = m_bassGlide.advance(sr);
+            const bool freqMoved = m_freqGlide.advance(sr);
+            if (bassMoved || freqMoved)
+                updateFilters();
+        }
+
         const float inL = left[i];
         const float inR = right[i];
 

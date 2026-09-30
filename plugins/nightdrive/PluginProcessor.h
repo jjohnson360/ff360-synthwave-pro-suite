@@ -85,6 +85,10 @@ private:
     // NightDrive generates its own signal, so there's no "self" key to fall back to)
     float m_scDuckEnvelope = 0.0f;
 
+    // Set in prepareToPlay, so processBlock never allocates or asks the host for the rate
+    double m_sampleRate = 44100.0;
+    std::vector<float> m_granL, m_granR;
+
     // Undo/redo, A/B and the preset menu. Owned here (not by the editor) so they survive
     // closing the plugin window; declared after m_apvts, which they use.
     ff360_ui::EditHistory m_history;

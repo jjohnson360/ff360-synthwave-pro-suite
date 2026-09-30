@@ -39,6 +39,17 @@ juce_add_binary_data(ff360_fonts
 )
 set_target_properties(ff360_fonts PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
 
+# Local builds install each plugin into the system plugin folder (Windows:
+# C:/Program Files/Common Files/VST3; macOS: ~/Library/Audio/Plug-Ins/VST3 and Components), so a
+# DAW rescan picks up the new build. Off in CI (GitHub sets CI). Close the DAW (or unload the
+# plugin) before building: a loaded plugin's files are locked and the copy step fails.
+if(DEFINED ENV{CI})
+    set(FF360_COPY_DEFAULT OFF)
+else()
+    set(FF360_COPY_DEFAULT ON)
+endif()
+option(FF360_COPY_PLUGINS_AFTER_BUILD "Install each plugin into the system plugin folder after building" ${FF360_COPY_DEFAULT})
+
 function(add_synthwave_plugin TARGET_NAME PLUGIN_NAME PLUGIN_CODE)
     juce_add_plugin(${TARGET_NAME}
         COMPANY_NAME "ff360 Labs"
@@ -48,7 +59,7 @@ function(add_synthwave_plugin TARGET_NAME PLUGIN_NAME PLUGIN_CODE)
         NEEDS_MIDI_OUTPUT FALSE
         IS_MIDI_EFFECT FALSE
         EDITOR_WANTS_KEYBOARD_FOCUS FALSE
-        COPY_PLUGIN_AFTER_BUILD FALSE
+        COPY_PLUGIN_AFTER_BUILD ${FF360_COPY_PLUGINS_AFTER_BUILD}
         PLUGIN_MANUFACTURER_CODE FF36
         PLUGIN_CODE ${PLUGIN_CODE}
         FORMATS VST3 AU

@@ -118,6 +118,31 @@ private:
     float m_z1 = 0.0f;
 };
 
+// Moves a filter frequency toward its target in log-frequency (about 20 ms), so an automated
+// cutoff doesn't jump: a biquad whose coefficients jump while it holds signal rings or bursts
+// (+20 dB and more at high resonance). The static response at any setting is unchanged.
+struct FrequencyGlide {
+    static constexpr size_t kUpdateInterval = 32; // samples between coefficient updates
+
+    float current = 0.0f;
+    float target = 1000.0f;
+
+    void setTarget(float hz) noexcept {
+        target = hz;
+        if (current <= 0.0f) current = hz; // first value: no glide from nothing
+    }
+    void snap() noexcept { current = target; }
+
+    // Advances by kUpdateInterval samples; true if the frequency moved (update the coefficients)
+    bool advance(float sampleRate) noexcept {
+        if (current == target) return false;
+        const float k = 1.0f - std::exp(-static_cast<float>(kUpdateInterval) / (0.020f * sampleRate));
+        current = std::exp(std::log(current) + (std::log(target) - std::log(current)) * k);
+        if (std::abs(current - target) <= 0.0005f * target) current = target;
+        return true;
+    }
+};
+
 // Biquad Filter (Lowpass, Highpass, Bandpass, Peaking, High Shelf, Low Shelf)
 class BiquadFilter {
 public:

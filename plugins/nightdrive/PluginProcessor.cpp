@@ -98,6 +98,9 @@ void NightDriveProcessor::updateScaleNotes(int scaleIndex) {
 }
 
 void NightDriveProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
+    m_sampleRate = sampleRate;
+    m_granL.assign(static_cast<size_t>(samplesPerBlock), 0.0f);
+    m_granR.assign(static_cast<size_t>(samplesPerBlock), 0.0f);
     m_outputStage.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_droneChorus.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_granularTexture.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
@@ -192,7 +195,7 @@ void NightDriveProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     float* left = buffer.getWritePointer(0);
     float* right = (numChannels > 1) ? buffer.getWritePointer(1) : buffer.getWritePointer(0);
 
-    const float sr = static_cast<float>(getSampleRate());
+    const float sr = static_cast<float>(m_sampleRate);
     const float invSr = 1.0f / sr;
 
     // Filter LFO frequency ~0.1 Hz
@@ -239,13 +242,17 @@ void NightDriveProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     m_droneChorus.processStereo(left, right, static_cast<size_t>(numSamples));
 
     // 5. Granular texture layer
-    std::vector<float> granL(numSamples, 0.0f);
-    std::vector<float> granR(numSamples, 0.0f);
-    m_granularTexture.processStereo(granL.data(), granR.data(), static_cast<size_t>(numSamples));
+    if (static_cast<size_t>(numSamples) > m_granL.size()) { // bigger block than prepared (rare)
+        m_granL.resize(static_cast<size_t>(numSamples));
+        m_granR.resize(static_cast<size_t>(numSamples));
+    }
+    std::fill_n(m_granL.begin(), numSamples, 0.0f);
+    std::fill_n(m_granR.begin(), numSamples, 0.0f);
+    m_granularTexture.processStereo(m_granL.data(), m_granR.data(), static_cast<size_t>(numSamples));
 
     for (int i = 0; i < numSamples; ++i) {
-        left[i] += granL[i] * granLvl;
-        right[i] += granR[i] * granLvl;
+        left[i] += m_granL[static_cast<size_t>(i)] * granLvl;
+        right[i] += m_granR[static_cast<size_t>(i)] * granLvl;
     }
 
     // 6. Reverb wash send

@@ -27,6 +27,34 @@
 
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <iostream>
+#include <atomic>
+#include <cstdlib>
+#include <new>
+
+
+// ---- Heap allocation counting ----
+// The audio thread must never allocate (it can block on the allocator's lock and glitch). The
+// test replaces the global operator new, and counts allocations made while the flag is set,
+// i.e. inside processBlock.
+namespace {
+thread_local bool t_countAllocations = false;
+std::atomic<int> g_allocations { 0 };
+}
+
+void* operator new(std::size_t size) {
+    if (t_countAllocations) ++g_allocations;
+    if (void* p = std::malloc(size != 0 ? size : 1)) return p;
+    throw std::bad_alloc();
+}
+void* operator new[](std::size_t size) {
+    if (t_countAllocations) ++g_allocations;
+    if (void* p = std::malloc(size != 0 ? size : 1)) return p;
+    throw std::bad_alloc();
+}
+void operator delete(void* p) noexcept { std::free(p); }
+void operator delete[](void* p) noexcept { std::free(p); }
+void operator delete(void* p, std::size_t) noexcept { std::free(p); }
+void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 
 namespace {
 
@@ -608,6 +636,85 @@ void testScalingAndFonts(const juce::File& snapshotDir) {
     }
 }
 
+
+// Every parameter randomised before every block, random block sizes, three sample rates and
+// every oversampling factor: output stays finite and bounded, and processBlock never allocates.
+template <typename Proc>
+void stressPlugin(const juce::String& name) {
+    currentPlugin = name + " stress";
+    juce::Random rng(1234);
+    int blocksRun = 0, allocations = 0, allocatingBlocks = 0;
+    bool finite = true;
+    float peak = 0.0f;
+
+    for (double rate : { 44100.0, 48000.0, 96000.0 }) {
+        for (int order = 0; order <= 2; ++order) {
+            Proc proc;
+            auto& apvts = proc.getApvts();
+            const bool oversampled = apvts.getParameter("oversampling") != nullptr;
+            if (!oversampled && order > 0) break;
+            if (oversampled) setPlain(apvts, "oversampling", (float)order);
+            // Gain stages at unity (0 dB, auto off): the bound is about the effect itself
+            setPlain(apvts, "outGain", 0.0f);
+            setPlain(apvts, "inGain", 0.0f);
+            setPlain(apvts, "autoGain", 0.0f);
+            proc.setRateAndBufferSizeDetails(rate, 512);
+            proc.prepareToPlay(rate, 512);
+
+            juce::AudioBuffer<float> buf(std::max(2, proc.getTotalNumInputChannels()), 512);
+            juce::MidiBuffer midi;
+            for (int block = 0; block < 150; ++block) {
+                // Host automation: every parameter jumps (bypass / oversampling left alone:
+                // oversampling switches on the message thread by design)
+                for (auto* param : proc.getParameters())
+                    if (auto* rp = dynamic_cast<juce::RangedAudioParameter*>(param))
+                        if (rp->paramID != "bypass" && rp->paramID != "oversampling"
+                            && rp->paramID != "outGain" && rp->paramID != "autoGain" && rp->paramID != "inGain")
+                            rp->setValueNotifyingHost(rng.nextFloat());
+
+                const int n = 1 + rng.nextInt(512);
+                buf.setSize(buf.getNumChannels(), n, false, false, true);
+                buf.clear();
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < n; ++i) buf.setSample(ch, i, (rng.nextFloat() * 2.0f - 1.0f) * 0.5f);
+
+                const int before = g_allocations.load();
+                t_countAllocations = true;
+                proc.processBlock(buf, midi);
+                t_countAllocations = false;
+                const int made = g_allocations.load() - before;
+                if (block >= 10 && made > 0) { allocations += made; ++allocatingBlocks; } // after warm-up
+
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < n; ++i) {
+                        const float v = buf.getSample(ch, i);
+                        finite = finite && std::isfinite(v);
+                        if (std::isfinite(v)) peak = std::max(peak, std::abs(v));
+                    }
+                ++blocksRun;
+            }
+            proc.releaseResources();
+        }
+    }
+    check(finite, "output stays finite under automation (" + juce::String(blocksRun) + " blocks)");
+    std::cout << "  " << name << ": peak " << juce::Decibels::gainToDecibels(peak) << " dBFS\n";
+    check(peak < 16.0f, "output stays bounded under automation (peak " + juce::String(juce::Decibels::gainToDecibels(peak), 1) + " dBFS)");
+    check(allocations == 0, "processBlock never allocates (" + juce::String(allocations) + " allocations in "
+          + juce::String(allocatingBlocks) + " blocks)");
+}
+
+void testStress() {
+    std::cout << "Stress\n";
+    stressPlugin<VHSPluginProcessor>("VHS");
+    stressPlugin<NeonChorusProcessor>("Neon Chorus");
+    stressPlugin<MidnightReverbProcessor>("Midnight Reverb");
+    stressPlugin<NeonWidthProcessor>("Neon Width");
+    stressPlugin<NeonTapeStopProcessor>("Neon Tape Stop");
+    stressPlugin<CyberpunkGlitchProcessor>("Cyberpunk Glitch");
+    stressPlugin<RetroFXProcessor>("RetroFX");
+    stressPlugin<NightDriveProcessor>("NightDrive");
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -623,6 +730,7 @@ int main(int argc, char* argv[]) {
     testOversampling();
     testDelta();
     testScalingAndFonts(snapshotDir);
+    testStress();
     testPlugin<VHSPluginProcessor>("VHS", ff360::getVhsPresets(), snapshotDir);
     testPlugin<NeonChorusProcessor>("Neon Chorus", ff360::getNeonChorusPresets(), snapshotDir);
     testPlugin<MidnightReverbProcessor>("Midnight Reverb", ff360::getMidnightReverbPresets(), snapshotDir);

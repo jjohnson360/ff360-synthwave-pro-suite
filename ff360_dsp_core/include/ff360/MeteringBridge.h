@@ -54,7 +54,12 @@ private:
     std::array<float, 4> m_tpHistoryR = { 0.0f, 0.0f, 0.0f, 0.0f };
 
     // LRA Gated buffer post Phase-10 rules (-70 dBFS absolute gate, -10 LU relative gate)
+    // Both reserved in prepare(), so the audio thread never allocates. LRA only changes when a
+    // 100 ms block is added, so it's recomputed then, not on every audio block.
+    static constexpr size_t kMaxLraBlocks = 600; // last 60 seconds
     std::vector<float> m_lraShortBlocks;
+    std::vector<float> m_lraScratch;
+    bool m_lraDirty = true;
     size_t m_lraSampleCounter = 0;
     double m_lraBlockSum = 0.0;
 

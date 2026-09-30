@@ -67,6 +67,9 @@ private:
     BiquadFilter m_freqHpL1, m_freqHpL2;
     BiquadFilter m_freqHpR1, m_freqHpR2;
 
+    // Automated crossovers move smoothly (see FrequencyGlide)
+    FrequencyGlide m_bassGlide, m_freqGlide;
+
     // Correlation meter short sliding window
     std::vector<float> m_corrBufferL;
     std::vector<float> m_corrBufferR;
