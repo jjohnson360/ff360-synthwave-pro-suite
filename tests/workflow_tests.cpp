@@ -476,6 +476,88 @@ void testOversampling() {
     check(x4 < off - 20.0, "4x cuts aliasing by more than 20 dB");
 }
 
+
+// Delta listen in one plugin: at 0% mix the effect adds nothing, so delta must be silence
+// (this also proves the dry part cancels through the oversampler); with the effect in, it isn't
+template <typename Proc>
+void testDeltaCancels(const juce::String& name) {
+    currentPlugin = name;
+    Proc proc;
+    auto& apvts = proc.getApvts();
+    check(apvts.getParameter("delta") != nullptr, "has Delta listen");
+    setPlain(apvts, "mix", 0.0f);
+    setPlain(apvts, "delta", 1.0f);
+    proc.setRateAndBufferSizeDetails(48000.0, 512);
+    proc.prepareToPlay(48000.0, 512);
+
+    juce::AudioBuffer<float> buf(std::max(2, proc.getTotalNumInputChannels()), 512);
+    juce::MidiBuffer midi;
+    juce::Random rng(3);
+    auto runPeak = [&](int blocks) {
+        float peak = 0.0f;
+        for (int b = 0; b < blocks; ++b) {
+            buf.clear();
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 512; ++i) buf.setSample(ch, i, (rng.nextFloat() * 2.0f - 1.0f) * 0.5f);
+            proc.processBlock(buf, midi);
+            if (b >= blocks / 2) peak = std::max(peak, buf.getMagnitude(0, 0, 512));
+        }
+        return peak;
+    };
+    const float silent = runPeak(20);
+    check(silent < 1.0e-5f, "delta at 0% mix is silent (peak " + juce::String(juce::Decibels::gainToDecibels(silent), 1) + " dB)");
+
+    setPlain(apvts, "mix", 100.0f);
+    const float audible = runPeak(40);
+    check(audible > 1.0e-3f, "delta at 100% mix carries the effect");
+
+    proc.getPresetManager().loadPreset(1);
+    check(apvts.getParameter("delta")->getValue() > 0.5f, "loading a preset leaves Delta alone");
+}
+
+// Reverb delta is the wet signal alone: an impulse's dry click is gone, its tail is not
+void testReverbDeltaIsWetOnly() {
+    currentPlugin = "Midnight Reverb delta";
+    auto run = [](bool delta, float& early, float& late) {
+        MidnightReverbProcessor proc;
+        auto& apvts = proc.getApvts();
+        setPlain(apvts, "mix", 35.0f);
+        setPlain(apvts, "predelay", 30.0f);
+        setPlain(apvts, "delta", delta ? 1.0f : 0.0f);
+        proc.setRateAndBufferSizeDetails(48000.0, 512);
+        proc.prepareToPlay(48000.0, 512);
+        juce::AudioBuffer<float> buf(std::max(2, proc.getTotalNumInputChannels()), 512);
+        juce::MidiBuffer midi;
+        std::vector<float> out;
+        for (int b = 0; b < 40; ++b) {
+            buf.clear();
+            if (b == 4) { buf.setSample(0, 0, 1.0f); buf.setSample(1, 0, 1.0f); } // after the 10 ms fade
+            proc.processBlock(buf, midi);
+            out.insert(out.end(), buf.getReadPointer(0), buf.getReadPointer(0) + 512);
+        }
+        const size_t hit = 4 * 512;
+        early = 0.0f; late = 0.0f;
+        for (size_t i = hit; i < hit + 48 * 10; ++i) early = std::max(early, std::abs(out[i]));   // first 10 ms
+        for (size_t i = hit + 48 * 40; i < out.size(); ++i) late = std::max(late, std::abs(out[i])); // after 40 ms
+    };
+    float earlyOff, lateOff, earlyOn, lateOn;
+    run(false, earlyOff, lateOff);
+    run(true, earlyOn, lateOn);
+    check(earlyOff > 0.5f, "without delta the dry click comes through (" + juce::String(earlyOff, 3) + ")");
+    check(earlyOn < 1.0e-4f, "with delta the dry click is gone (" + juce::String(earlyOn, 6) + ")");
+    check(lateOn > 1.0e-4f && std::abs(lateOn - lateOff) < 0.25f * lateOff + 1.0e-6f,
+          "with delta the reverb tail is unchanged (" + juce::String(lateOn, 5) + " vs " + juce::String(lateOff, 5) + ")");
+}
+
+void testDelta() {
+    std::cout << "Delta\n";
+    testDeltaCancels<VHSPluginProcessor>("VHS");
+    testDeltaCancels<CyberpunkGlitchProcessor>("Cyberpunk Glitch");
+    testDeltaCancels<MidnightReverbProcessor>("Midnight Reverb");
+    testDeltaCancels<NeonChorusProcessor>("Neon Chorus");
+    testReverbDeltaIsWetOnly();
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -489,6 +571,7 @@ int main(int argc, char* argv[]) {
 
     testOutputStage();
     testOversampling();
+    testDelta();
     testPlugin<VHSPluginProcessor>("VHS", ff360::getVhsPresets(), snapshotDir);
     testPlugin<NeonChorusProcessor>("Neon Chorus", ff360::getNeonChorusPresets(), snapshotDir);
     testPlugin<MidnightReverbProcessor>("Midnight Reverb", ff360::getMidnightReverbPresets(), snapshotDir);

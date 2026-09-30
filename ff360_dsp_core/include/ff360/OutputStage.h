@@ -27,6 +27,7 @@ public:
         float outputGainDb = 0.0f;
         bool autoGain = false;
         bool bypass = false;
+        bool holdAutoGain = false; // e.g. during delta listen, whose level says nothing about loudness
     };
 
     void prepare(double sampleRate, size_t maxBlockSize) {
@@ -95,7 +96,7 @@ public:
         m_wetMs = msCoeff * m_wetMs + (1.0f - msCoeff) * blockWetMs;
 
         // Only re-aim while there's input to match; hold through silence and tails
-        if (m_dryMs > kSilenceMs && m_wetMs > kSilenceMs * 1.0e-3f)
+        if (!s.holdAutoGain && m_dryMs > kSilenceMs && m_wetMs > kSilenceMs * 1.0e-3f)
             m_autoTargetDb = clamp(10.0f * std::log10(m_dryMs / m_wetMs), -kMaxAutoDb, kMaxAutoDb);
 
         const float autoAim = s.autoGain ? m_autoTargetDb : 0.0f;

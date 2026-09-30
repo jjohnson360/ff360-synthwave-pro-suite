@@ -9,6 +9,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "ff360_ui/PresetManager.h"
 #include "ff360_ui/OutputStrip.h"
+#include "ff360/DeltaTap.h"
 
 class MidnightReverbProcessor : public juce::AudioProcessor {
 public:
@@ -53,6 +54,7 @@ private:
     ff360::FF360_DSP_ParameterManager m_paramManager;
     ff360::FF360_DSP_MeteringBridge m_meteringBridge;
     ff360::FF360_DSP_OutputStage m_outputStage; // auto gain, output trim, bypass
+    ff360::FF360_DSP_DeltaTap m_deltaTap;       // delta listen, at the engine's rate
 
     // Undo/redo, A/B and the preset menu. Owned here (not by the editor) so they survive
     // closing the plugin window; declared after m_apvts, which they use.

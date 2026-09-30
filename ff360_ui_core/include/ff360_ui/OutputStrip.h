@@ -15,6 +15,7 @@ namespace output {
 inline constexpr const char* outGainId = "outGain";
 inline constexpr const char* autoGainId = "autoGain";
 inline constexpr const char* bypassId = "bypass";
+inline constexpr const char* deltaId = "delta";
 
 // withAutoGain: false for plugins where matching loudness would fight the effect itself
 // (generators, tape stop). withOutGain: false when the plugin already has an "outGain" (VHS).
@@ -31,19 +32,31 @@ inline void addParameters(std::vector<std::unique_ptr<juce::RangedAudioParameter
         juce::ParameterID{ bypassId, 1 }, "Bypass", false));
 }
 
+// Delta listen (ff360::FF360_DSP_DeltaTap): a listening aid, never stored in presets, undo or A/B
+inline void addDeltaParameter(std::vector<std::unique_ptr<juce::RangedAudioParameter>>& params) {
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ deltaId, 1 }, "Delta Listen", false));
+}
+
+inline bool readDelta(const juce::AudioProcessorValueTreeState& apvts) {
+    auto* v = apvts.getRawParameterValue(deltaId);
+    return v != nullptr && v->load() > 0.5f;
+}
+
 inline ff360::FF360_DSP_OutputStage::Settings readSettings(const juce::AudioProcessorValueTreeState& apvts) {
     ff360::FF360_DSP_OutputStage::Settings s;
     if (auto* v = apvts.getRawParameterValue(outGainId)) s.outputGainDb = v->load();
     if (auto* v = apvts.getRawParameterValue(autoGainId)) s.autoGain = v->load() > 0.5f;
     if (auto* v = apvts.getRawParameterValue(bypassId)) s.bypass = v->load() > 0.5f;
+    s.holdAutoGain = readDelta(apvts);
     return s;
 }
 
 } // namespace output
 
-// Footer row: [BYPASS]  OUT ────●──── +0.0 dB  [OS 2x] [AUTO]
+// Footer row: [BYPASS] [Δ]  OUT ────●──── +0.0 dB  [OS 2x] [AUTO]
 // AUTO shows the correction it's applying while on. Double-click the slider for 0 dB.
-// OS (oversampling) and AUTO only appear on plugins that have those parameters.
+// Δ (delta listen), OS (oversampling) and AUTO only appear on plugins that have those parameters.
 class OutputStrip : public juce::Component, private juce::Timer {
 public:
     OutputStrip(juce::AudioProcessorValueTreeState& apvts, const ff360::FF360_DSP_OutputStage& stage)
@@ -56,8 +69,17 @@ public:
         m_bypassAttach = std::make_unique<Apvts::ButtonAttachment>(apvts, output::bypassId, m_bypass);
         addAndMakeVisible(m_bypass);
 
+        if (apvts.getParameter(output::deltaId) != nullptr) {
+            m_delta.setButtonText(juce::String::fromUTF8("\xce\x94")); // Greek capital delta
+            m_delta.setColour(juce::ToggleButton::tickColourId, juce::Colour(Colors::AccessibleSky));
+            m_delta.setTooltip("Delta listen: hear only what the effect adds");
+            m_deltaAttach = std::make_unique<Apvts::ButtonAttachment>(apvts, output::deltaId, m_delta);
+            addAndMakeVisible(m_delta);
+        }
+
         m_label.setText("OUT", juce::dontSendNotification);
-        m_label.setFont(juce::Font(9.0f, juce::Font::bold));
+        m_label.setFont(juce::Font(8.0f, juce::Font::bold));
+        m_label.setBorderSize({});
         m_label.setColour(juce::Label::textColourId, juce::Colour(Colors::TextDim));
         addAndMakeVisible(m_label);
 
@@ -101,18 +123,23 @@ public:
 
     void resized() override {
         auto b = getLocalBounds();
-        m_bypass.setBounds(b.removeFromLeft(58));
-        b.removeFromLeft(8);
+        m_bypass.setBounds(b.removeFromLeft(52));
+        b.removeFromLeft(6);
+        if (m_deltaAttach != nullptr) {
+            m_delta.setBounds(b.removeFromLeft(26));
+            b.removeFromLeft(6);
+        }
         if (m_autoAttach != nullptr) {
-            m_auto.setBounds(b.removeFromRight(52));
+            m_auto.setBounds(b.removeFromRight(48));
             b.removeFromRight(6);
         }
         if (m_osAttach != nullptr) {
-            m_os.setBounds(b.removeFromRight(46));
+            m_os.setBounds(b.removeFromRight(44));
             b.removeFromRight(6);
         }
-        m_label.setBounds(b.removeFromLeft(24));
-        m_gainValue.setBounds(b.removeFromRight(46));
+        m_gainValue.setBounds(b.removeFromRight(42));
+        // "OUT" caption above the slider, so the slider gets the full width of its column
+        m_label.setBounds(b.removeFromTop(10));
         m_gain.setBounds(b);
     }
 
@@ -156,13 +183,13 @@ private:
 
     const ff360::FF360_DSP_OutputStage& m_stage;
 
-    juce::ToggleButton m_bypass, m_auto, m_os; // drawn as pill toggles by FF360_LookAndFeel
+    juce::ToggleButton m_bypass, m_delta, m_auto, m_os; // drawn as pill toggles by FF360_LookAndFeel
     juce::RangedAudioParameter* m_osParam = nullptr;
     std::unique_ptr<juce::ParameterAttachment> m_osAttach;
     juce::Slider m_gain;
     juce::Label m_label, m_gainValue;
 
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> m_bypassAttach, m_autoAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> m_bypassAttach, m_deltaAttach, m_autoAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> m_gainAttach;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OutputStrip)

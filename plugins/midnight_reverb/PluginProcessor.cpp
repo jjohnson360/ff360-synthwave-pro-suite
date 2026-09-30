@@ -49,6 +49,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout MidnightReverbProcessor::cre
 
     // Output trim, auto gain and bypass (ff360::FF360_DSP_OutputStage)
     ff360_ui::output::addParameters(params, true);
+    ff360_ui::output::addDeltaParameter(params); // hear only what the effect adds
 
     return { params.begin(), params.end() };
 }
@@ -59,8 +60,8 @@ MidnightReverbProcessor::MidnightReverbProcessor()
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)
                      .withInput("Sidechain", juce::AudioChannelSet::stereo(), false)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
-      m_history(*this, {}, { "bypass" }),
-      m_presetManager(m_apvts, m_history, "Midnight Reverb", ff360::getMidnightReverbPresets(), { "bypass" }) {
+      m_history(*this, {}, { "bypass", "delta" }),
+      m_presetManager(m_apvts, m_history, "Midnight Reverb", ff360::getMidnightReverbPresets(), { "bypass", "delta" }) {
 }
 
 bool MidnightReverbProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
@@ -75,6 +76,7 @@ bool MidnightReverbProcessor::isBusesLayoutSupported(const BusesLayout& layouts)
 
 void MidnightReverbProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     m_outputStage.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
+    m_deltaTap.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_reverbEngine.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_meteringBridge.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_paramManager.prepare(sampleRate);
@@ -132,7 +134,10 @@ void MidnightReverbProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
         scRight = (scBuffer.getNumChannels() > 1) ? scBuffer.getReadPointer(1) : scLeft;
     }
 
+    m_deltaTap.capture(left, right, static_cast<size_t>(numSamples));
     m_reverbEngine.processStereo(left, right, static_cast<size_t>(numSamples), scLeft, scRight);
+    // Delta: the reverb alone, at its mix level (the engine mixes lerp(dry, wet, mix))
+    m_deltaTap.apply(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readDelta(m_apvts), 1.0f - params.mix);
     m_outputStage.process(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readSettings(m_apvts));
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
 }

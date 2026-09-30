@@ -52,6 +52,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout CyberpunkGlitchProcessor::cr
 
     // Output trim, auto gain and bypass (ff360::FF360_DSP_OutputStage)
     ff360_ui::output::addParameters(params, true);
+    ff360_ui::output::addDeltaParameter(params); // hear only what the effect adds
 
     return { params.begin(), params.end() };
 }
@@ -62,8 +63,8 @@ CyberpunkGlitchProcessor::CyberpunkGlitchProcessor()
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)
                      .withInput("Sidechain", juce::AudioChannelSet::stereo(), false)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
-      m_history(*this, {}, { "bypass", "oversampling" }),
-      m_presetManager(m_apvts, m_history, "Cyberpunk Glitch", ff360::getCyberpunkGlitchPresets(), { "bypass", "oversampling" }) {
+      m_history(*this, {}, { "bypass", "delta", "oversampling" }),
+      m_presetManager(m_apvts, m_history, "Cyberpunk Glitch", ff360::getCyberpunkGlitchPresets(), { "bypass", "delta", "oversampling" }) {
 }
 
 bool CyberpunkGlitchProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
@@ -94,6 +95,8 @@ void CyberpunkGlitchProcessor::applyOversampling(int order) {
     m_scUpR.assign(block, 0.0f);
 
     // The host compensates this; the dry path (bypass, auto gain) is delayed to match
+    m_deltaTap.prepare(rate, block);
+
     const int latency = m_oversampler.getLatencySamples();
     m_outputStage.setDryDelay(static_cast<size_t>(latency));
     setLatencySamples(latency);
@@ -164,6 +167,7 @@ void CyberpunkGlitchProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         scRight = (scBuffer.getNumChannels() > 1) ? scBuffer.getReadPointer(1) : scLeft;
     }
 
+    const bool delta = ff360_ui::output::readDelta(m_apvts);
     m_oversampler.process(buffer, std::min(2, numChannels), [&](float* l, float* r, size_t n) {
         // The sidechain only drives transient detection, so holding each sample is enough
         const float* upL = scLeft;
@@ -177,7 +181,9 @@ void CyberpunkGlitchProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             upL = m_scUpL.data();
             upR = m_scUpR.data();
         }
+        m_deltaTap.capture(l, r, n);
         m_glitchEngine.processStereo(l, r, n, upL, upR);
+        m_deltaTap.apply(l, r, n, delta, 1.0f); // delta: the difference the glitches make
     });
     m_outputStage.process(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readSettings(m_apvts));
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));

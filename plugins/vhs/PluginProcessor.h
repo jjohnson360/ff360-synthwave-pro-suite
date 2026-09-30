@@ -10,6 +10,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "ff360_ui/PresetManager.h"
 #include "ff360_ui/OutputStrip.h"
+#include "ff360/DeltaTap.h"
 #include "ff360_ui/Oversampler.h"
 
 class VHSPluginProcessor : public juce::AudioProcessor,
@@ -56,6 +57,7 @@ private:
     ff360::FF360_DSP_ParameterManager m_paramManager;
     ff360::FF360_DSP_MeteringBridge m_meteringBridge;
     ff360::FF360_DSP_OutputStage m_outputStage; // auto gain, output trim, bypass
+    ff360::FF360_DSP_DeltaTap m_deltaTap;       // delta listen, at the engine's rate
     ff360_ui::Oversampler m_oversampler;        // runs the engine at 2x / 4x
     double m_baseRate = 44100.0;
     int m_maxBlock = 512;

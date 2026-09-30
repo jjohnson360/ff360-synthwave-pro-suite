@@ -34,6 +34,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout VHSPluginProcessor::createPa
 
     // Output trim, auto gain and bypass (ff360::FF360_DSP_OutputStage)
     ff360_ui::output::addParameters(params, true, false);
+    ff360_ui::output::addDeltaParameter(params); // hear only what the effect adds
 
     return { params.begin(), params.end() };
 }
@@ -44,8 +45,8 @@ VHSPluginProcessor::VHSPluginProcessor()
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
       m_degradeMacro(ff360::FF360_DSP_MacroSystem::createVhsDegradeMacro()),
-      m_history(*this, {}, { "bypass", "oversampling" }),
-      m_presetManager(m_apvts, m_history, "VHS", ff360::getVhsPresets(), { "bypass", "oversampling" }) {
+      m_history(*this, {}, { "bypass", "delta", "oversampling" }),
+      m_presetManager(m_apvts, m_history, "VHS", ff360::getVhsPresets(), { "bypass", "delta", "oversampling" }) {
 }
 
 void VHSPluginProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
@@ -65,6 +66,8 @@ void VHSPluginProcessor::applyOversampling(int order) {
     m_tapeEngine.prepare(rate, block);
 
     // The host compensates this; the dry path (bypass, auto gain) is delayed to match
+    m_deltaTap.prepare(rate, block);
+
     const int latency = m_oversampler.getLatencySamples();
     m_outputStage.setDryDelay(static_cast<size_t>(latency));
     setLatencySamples(latency);
@@ -145,8 +148,11 @@ void VHSPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     float* left = buffer.getWritePointer(0);
     float* right = (numChannels > 1) ? buffer.getWritePointer(1) : buffer.getWritePointer(0);
 
-    m_oversampler.process(buffer, std::min(2, numChannels), [this](float* l, float* r, size_t n) {
+    const bool delta = ff360_ui::output::readDelta(m_apvts);
+    m_oversampler.process(buffer, std::min(2, numChannels), [this, delta](float* l, float* r, size_t n) {
+        m_deltaTap.capture(l, r, n);
         m_tapeEngine.processStereo(l, r, n);
+        m_deltaTap.apply(l, r, n, delta, 1.0f); // delta: the difference the tape makes
     });
 
     // Post-Phase-10 precision metering
