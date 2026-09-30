@@ -28,6 +28,28 @@ else()
     FetchContent_MakeAvailable(juce)
 endif()
 
+# Brand fonts (Barlow Condensed, SIL OFL 1.1: ff360_ui_core/fonts/BarlowCondensed-OFL.txt),
+# embedded in every plugin and used by ff360_ui::FF360_LookAndFeel
+juce_add_binary_data(ff360_fonts
+    HEADER_NAME FF360Fonts.h
+    NAMESPACE ff360_fonts
+    SOURCES
+        ff360_ui_core/fonts/BarlowCondensed-Regular.ttf
+        ff360_ui_core/fonts/BarlowCondensed-SemiBold.ttf
+)
+set_target_properties(ff360_fonts PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
+
+# Local builds install each plugin into the system plugin folder (Windows:
+# C:/Program Files/Common Files/VST3; macOS: ~/Library/Audio/Plug-Ins/VST3 and Components), so a
+# DAW rescan picks up the new build. Off in CI (GitHub sets CI). Close the DAW (or unload the
+# plugin) before building: a loaded plugin's files are locked and the copy step fails.
+if(DEFINED ENV{CI})
+    set(FF360_COPY_DEFAULT OFF)
+else()
+    set(FF360_COPY_DEFAULT ON)
+endif()
+option(FF360_COPY_PLUGINS_AFTER_BUILD "Install each plugin into the system plugin folder after building" ${FF360_COPY_DEFAULT})
+
 function(add_synthwave_plugin TARGET_NAME PLUGIN_NAME PLUGIN_CODE)
     juce_add_plugin(${TARGET_NAME}
         COMPANY_NAME "ff360 Labs"
@@ -37,7 +59,7 @@ function(add_synthwave_plugin TARGET_NAME PLUGIN_NAME PLUGIN_CODE)
         NEEDS_MIDI_OUTPUT FALSE
         IS_MIDI_EFFECT FALSE
         EDITOR_WANTS_KEYBOARD_FOCUS FALSE
-        COPY_PLUGIN_AFTER_BUILD FALSE
+        COPY_PLUGIN_AFTER_BUILD ${FF360_COPY_PLUGINS_AFTER_BUILD}
         PLUGIN_MANUFACTURER_CODE FF36
         PLUGIN_CODE ${PLUGIN_CODE}
         FORMATS VST3 AU
@@ -54,8 +76,10 @@ function(add_synthwave_plugin TARGET_NAME PLUGIN_NAME PLUGIN_CODE)
 
     target_link_libraries(${TARGET_NAME} PRIVATE
         ff360_dsp_core
+        ff360_fonts
         juce::juce_audio_utils
         juce::juce_audio_processors
+        juce::juce_dsp
         juce::juce_gui_basics
         juce::juce_gui_extra
         juce::juce_graphics
@@ -136,3 +160,42 @@ add_synthwave_plugin(NightDrive "NightDrive" "NDrv"
 )
 
 message(STATUS "ff360_labs Synthwave FX Suite (All 8 Plugins + JUCE VST3 Targets) configured successfully.")
+
+# Workflow tests: the shared preset / undo / A-B bar in all 8 plugins, built into one app.
+# Off by default so release builds are unchanged:
+#   cmake -B build -DFF360_BUILD_WORKFLOW_TESTS=ON
+#   cmake --build build --config Release --target ff360_workflow_tests
+option(FF360_BUILD_WORKFLOW_TESTS "Build the preset/undo/A-B workflow tests" OFF)
+if(FF360_BUILD_WORKFLOW_TESTS)
+    juce_add_console_app(ff360_workflow_tests PRODUCT_NAME "ff360_workflow_tests")
+
+    # Every plugin defines createPluginFilter(), so each processor is compiled through a small
+    # generated wrapper that renames it for this app
+    set(FF360_TEST_SOURCES tests/workflow_tests.cpp)
+    foreach(dir vhs neon_chorus midnight_reverb neon_width neon_tape_stop cyberpunk_glitch retrofx nightdrive)
+        set(wrapper "${CMAKE_CURRENT_BINARY_DIR}/workflow_tests/${dir}_processor.cpp")
+        file(CONFIGURE OUTPUT "${wrapper}" CONTENT
+            "#define createPluginFilter createPluginFilter_${dir}\n#include \"${dir}/PluginProcessor.cpp\"\n")
+        list(APPEND FF360_TEST_SOURCES "${wrapper}" plugins/${dir}/PluginEditor.cpp)
+    endforeach()
+    target_sources(ff360_workflow_tests PRIVATE ${FF360_TEST_SOURCES})
+
+    target_include_directories(ff360_workflow_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/ff360_dsp_core/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/ff360_ui_core/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/plugins
+    )
+    target_link_libraries(ff360_workflow_tests PRIVATE
+        ff360_dsp_core
+        ff360_fonts
+        juce::juce_audio_utils
+        juce::juce_audio_processors
+        juce::juce_dsp
+        juce::juce_gui_extra
+    )
+    target_compile_definitions(ff360_workflow_tests PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_DISPLAY_SPLASH_SCREEN=0 # JUCE 7's splash covers the editor snapshots
+    )
+endif()

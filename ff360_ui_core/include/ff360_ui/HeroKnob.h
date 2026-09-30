@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DesignTokens.h"
+#include "Fonts.h"
 
 #if __has_include(<juce_gui_basics/juce_gui_basics.h>)
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -26,6 +27,12 @@ public:
     float getValue() const noexcept { return m_value; }
 
     std::function<void(float)> onValueChanged;
+
+    // Edit gesture around a drag or wheel step, for host automation recording and undo
+    std::function<void()> onDragStart;
+    std::function<void()> onDragEnd;
+    // Double-click: back to the parameter's default (like every other knob)
+    std::function<void()> onResetToDefault;
 
     void paint(juce::Graphics& g) override {
         const auto bounds = getLocalBounds().toFloat();
@@ -71,19 +78,28 @@ public:
 
         // Center readout (0 to 100%)
         g.setColour(juce::Colour(Colors::TextOffWhite));
-        g.setFont(juce::Font(15.0f, juce::Font::bold));
+        g.setFont(ff360_ui::brandFont(15.0f, juce::Font::bold));
         const int pct = static_cast<int>(std::round(m_value * 100.0f));
         g.drawText(juce::String(pct) + m_unit, centreX - innerR, centreY - 10.0f, innerR * 2.0f, 20.0f, juce::Justification::centred);
 
         // Title Label at bottom
         g.setColour(juce::Colour(Colors::MetallicGold));
-        g.setFont(juce::Font(11.0f, juce::Font::bold));
+        g.setFont(ff360_ui::brandFont(11.0f, juce::Font::bold));
         g.drawText(m_title.toUpperCase(), 0, static_cast<int>(bounds.getBottom() - 20.0f), static_cast<int>(bounds.getWidth()), 18, juce::Justification::centred);
     }
 
     void mouseDown(const juce::MouseEvent& e) override {
         m_dragStartVal = m_value;
         m_dragStartY = e.position.y;
+        if (onDragStart) onDragStart();
+    }
+
+    void mouseUp(const juce::MouseEvent&) override {
+        if (onDragEnd) onDragEnd();
+    }
+
+    void mouseDoubleClick(const juce::MouseEvent&) override {
+        if (onResetToDefault) onResetToDefault();
     }
 
     void mouseDrag(const juce::MouseEvent& e) override {
@@ -93,7 +109,9 @@ public:
     }
 
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) override {
+        if (onDragStart) onDragStart();
         setValue(m_value + wheel.deltaY * 0.05f);
+        if (onDragEnd) onDragEnd();
     }
 
 private:

@@ -1,16 +1,55 @@
 #pragma once
 
 #include "DesignTokens.h"
+#include "Fonts.h"
 
 #if __has_include(<juce_gui_basics/juce_gui_basics.h>)
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "FF360Fonts.h" // Barlow Condensed, embedded (see CMakeLists.txt)
 
 namespace ff360_ui {
 
-class FF360_LookAndFeel : public juce::LookAndFeel_V4 {
+// Colours, drawing and the brand typeface. Use FF360_LookAndFeel (below) in editors.
+class FF360_LookAndFeelBase : public juce::LookAndFeel_V4 {
 public:
-    FF360_LookAndFeel() {
+    // Brand typeface: every default-font text in the plugins (juce::Font(size, style)) is drawn in
+    // Barlow Condensed, bold as SemiBold, so it looks the same on every system
+    juce::Typeface::Ptr getTypefaceForFont(const juce::Font& font) override {
+        if (font.getTypefaceName() == juce::Font::getDefaultSansSerifFontName())
+            return font.isBold() ? m_semiBold : m_regular;
+        return juce::LookAndFeel_V4::getTypefaceForFont(font);
+    }
+
+    juce::Font getPopupMenuFont() override { return brandFont(14.0f); }
+
+    // Tooltips in the brand face at a readable size (JUCE's own are fixed at 13 px)
+    juce::Rectangle<int> getTooltipBounds(const juce::String& tipText, juce::Point<int> screenPos,
+                                          juce::Rectangle<int> parentArea) override {
+        const auto layout = layoutTooltip(tipText);
+        const int w = (int)std::ceil(layout.getWidth()) + 16;
+        const int h = (int)std::ceil(layout.getHeight()) + 10;
+        return juce::Rectangle<int>(screenPos.x > parentArea.getCentreX() ? screenPos.x - (w + 12) : screenPos.x + 24,
+                                    screenPos.y > parentArea.getCentreY() ? screenPos.y - (h + 6) : screenPos.y + 6,
+                                    w, h).constrainedWithin(parentArea);
+    }
+
+    void drawTooltip(juce::Graphics& g, const juce::String& text, int width, int height) override {
+        const auto bounds = juce::Rectangle<float>(0.0f, 0.0f, (float)width, (float)height);
+        g.setColour(findColour(juce::TooltipWindow::backgroundColourId));
+        g.fillRoundedRectangle(bounds, 5.0f);
+        g.setColour(findColour(juce::TooltipWindow::outlineColourId));
+        g.drawRoundedRectangle(bounds.reduced(0.5f), 5.0f, 1.0f);
+        layoutTooltip(text).draw(g, bounds.reduced(8.0f, 5.0f));
+    }
+    juce::Font getComboBoxFont(juce::ComboBox& box) override {
+        return brandFont(juce::jmin(15.0f, (float)box.getHeight() * 0.7f));
+    }
+    juce::Font getTextButtonFont(juce::TextButton&, int buttonHeight) override {
+        return brandFont(juce::jmin(15.0f, (float)buttonHeight * 0.55f));
+    }
+
+    FF360_LookAndFeelBase() {
         setColour(juce::ResizableWindow::backgroundColourId, juce::Colour(Colors::DeepBlack));
         setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(Colors::MetallicGold));
         setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(Colors::TrackBackground));
@@ -30,6 +69,27 @@ public:
         
         setColour(juce::ToggleButton::textColourId, juce::Colour(Colors::TextDim));
         setColour(juce::ToggleButton::tickColourId, juce::Colour(Colors::AccessibleSky));
+
+        // Preset menu, tooltips and the Save / Delete preset dialogs
+        setColour(juce::PopupMenu::backgroundColourId, juce::Colour(Colors::MatteCharcoal));
+        setColour(juce::PopupMenu::textColourId, juce::Colour(Colors::TextOffWhite));
+        setColour(juce::PopupMenu::headerTextColourId, juce::Colour(Colors::MetallicGold));
+        setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(Colors::MetallicGold).withAlpha(0.18f));
+        setColour(juce::PopupMenu::highlightedTextColourId, juce::Colour(Colors::TextOffWhite));
+
+        setColour(juce::TooltipWindow::backgroundColourId, juce::Colour(Colors::DeepBlack));
+        setColour(juce::TooltipWindow::textColourId, juce::Colour(Colors::TextOffWhite));
+        setColour(juce::TooltipWindow::outlineColourId, juce::Colour(Colors::MetallicGold).withAlpha(0.4f));
+
+        setColour(juce::AlertWindow::backgroundColourId, juce::Colour(Colors::MatteCharcoal));
+        setColour(juce::AlertWindow::textColourId, juce::Colour(Colors::TextOffWhite));
+        setColour(juce::AlertWindow::outlineColourId, juce::Colour(Colors::MetallicGold).withAlpha(0.4f));
+        setColour(juce::TextEditor::backgroundColourId, juce::Colour(Colors::DeepBlack));
+        setColour(juce::TextEditor::textColourId, juce::Colour(Colors::TextOffWhite));
+        setColour(juce::TextEditor::outlineColourId, juce::Colour(Colors::MetallicGold).withAlpha(0.3f));
+        setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(Colors::MetallicGold));
+        setColour(juce::TextEditor::highlightColourId, juce::Colour(Colors::MetallicGold).withAlpha(0.3f));
+        setColour(juce::CaretComponent::caretColourId, juce::Colour(Colors::MetallicGold));
     }
 
     void drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
@@ -177,13 +237,50 @@ public:
             }
         }
         
-        g.setFont(juce::Font(9.5f, juce::Font::bold));
+        g.setFont(ff360_ui::brandFont(9.5f, juce::Font::bold));
         g.setColour(isToggled ? accentColour : juce::Colour(Colors::TextDim));
         
         // Custom text layout
         juce::String text = button.getButtonText().toUpperCase();
         g.drawText(text, bounds.toNearestInt(), juce::Justification::centred, false);
     }
+
+private:
+    juce::TextLayout layoutTooltip(const juce::String& text) {
+        juce::AttributedString s;
+        s.setJustification(juce::Justification::centredLeft);
+        s.append(text, brandFont(12.0f), findColour(juce::TooltipWindow::textColourId));
+        juce::TextLayout layout;
+        layout.createLayoutWithBalancedLineLengths(s, 260.0f);
+        return layout;
+    }
+
+    // Members, not statics: a static typeface in a plugin can outlive JUCE when the host unloads it
+    juce::Typeface::Ptr m_regular = juce::Typeface::createSystemTypefaceFor(
+        ff360_fonts::BarlowCondensedRegular_ttf, (size_t)ff360_fonts::BarlowCondensedRegular_ttfSize);
+    juce::Typeface::Ptr m_semiBold = juce::Typeface::createSystemTypefaceFor(
+        ff360_fonts::BarlowCondensedSemiBold_ttf, (size_t)ff360_fonts::BarlowCondensedSemiBold_ttfSize);
+};
+
+// JUCE resolves fonts (and styles top-level windows such as the Save Preset dialog) through the
+// *default* LookAndFeel, not a component's own. While any ff360 editor is open, this makes an
+// FF360_LookAndFeelBase the default of this plugin's JUCE instance.
+struct FF360_DefaultLookAndFeel {
+    FF360_DefaultLookAndFeel() {
+        juce::LookAndFeel::setDefaultLookAndFeel(&lnf);
+        juce::Typeface::clearTypefaceCache(); // drop fonts resolved before the brand face was set
+    }
+    ~FF360_DefaultLookAndFeel() {
+        juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
+        juce::Typeface::clearTypefaceCache();
+    }
+    FF360_LookAndFeelBase lnf;
+};
+
+// The editors' LookAndFeel: also keeps FF360_DefaultLookAndFeel installed while it exists
+// (shared by every open editor of this plugin; removed with the last one)
+class FF360_LookAndFeel : public FF360_LookAndFeelBase {
+    juce::SharedResourcePointer<FF360_DefaultLookAndFeel> m_default;
 };
 
 } // namespace ff360_ui

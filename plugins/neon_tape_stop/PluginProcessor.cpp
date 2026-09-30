@@ -35,6 +35,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout NeonTapeStopProcessor::creat
         juce::ParameterID{ "mix", 1 }, "Mix", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
+    // Oversampling around the engine (ff360_ui::Oversampler)
+    ff360_ui::Oversampler::addParameter(params); // Off / 2x (default) / 4x
+
+    // Output trim, bypass (ff360::FF360_DSP_OutputStage)
+    ff360_ui::output::addParameters(params, false);
+
     return { params.begin(), params.end() };
 }
 
@@ -43,14 +49,38 @@ NeonTapeStopProcessor::NeonTapeStopProcessor()
                      .withInput("Input", juce::AudioChannelSet::stereo(), true)
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
-      m_presets(ff360::getNeonTapeStopPresets()) {
+      m_history(*this, {}, { "trigger", "bypass", "oversampling" }),
+      m_presetManager(m_apvts, m_history, "Neon Tape Stop", ff360::getNeonTapeStopPresets(), { "trigger", "bypass", "oversampling" }) {
 }
 
 void NeonTapeStopProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
-    m_tapeEngine.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
-    m_controller.prepare(sampleRate);
+    m_baseRate = sampleRate;
+    m_maxBlock = samplesPerBlock;
+    m_outputStage.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_meteringBridge.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_paramManager.prepare(sampleRate);
+    m_oversampler.prepare(2, samplesPerBlock);
+    applyOversampling(ff360_ui::Oversampler::readOrder(m_apvts));
+}
+
+void NeonTapeStopProcessor::applyOversampling(int order) {
+    m_oversampler.setOrder(order);
+    const double rate = m_baseRate * m_oversampler.getFactor();
+    const size_t block = static_cast<size_t>(m_maxBlock * m_oversampler.getFactor());
+    m_tapeEngine.prepare(rate, block);
+    m_controller.prepare(rate);
+
+    // The host compensates this; the dry path (bypass, auto gain) is delayed to match
+    const int latency = m_oversampler.getLatencySamples();
+    m_outputStage.setDryDelay(static_cast<size_t>(latency));
+    setLatencySamples(latency);
+}
+
+void NeonTapeStopProcessor::handleAsyncUpdate() {
+    // The Oversampling setting changed: re-prepare with the audio thread held off
+    suspendProcessing(true);
+    applyOversampling(ff360_ui::Oversampler::readOrder(m_apvts));
+    suspendProcessing(false);
 }
 
 void NeonTapeStopProcessor::releaseResources() {
@@ -65,6 +95,13 @@ void NeonTapeStopProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     const int numChannels = buffer.getNumChannels();
 
     if (numChannels == 0 || numSamples == 0) return;
+
+    // Oversampling setting changed: switch on the message thread (it re-prepares the engine)
+    if (ff360_ui::Oversampler::readOrder(m_apvts) != m_oversampler.getOrder())
+        triggerAsyncUpdate();
+
+    // Keep the input for bypass and auto gain
+    m_outputStage.captureDry(buffer.getReadPointer(0), buffer.getReadPointer(numChannels > 1 ? 1 : 0), static_cast<size_t>(numSamples));
 
     // Check MIDI triggers (NoteOn triggers stop, NoteOff triggers recovery)
     for (const auto metadata : midiMessages) {
@@ -93,13 +130,15 @@ void NeonTapeStopProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     p.profile = static_cast<ff360::TapeStopProfile>(static_cast<int>(m_apvts.getRawParameterValue("profile")->load()));
     m_controller.setParameters(p);
 
-    // Update state machine and apply parameter changes to TapeEngine
-    m_controller.updateAndApply(m_tapeEngine, static_cast<size_t>(numSamples));
-
     float* left = buffer.getWritePointer(0);
     float* right = (numChannels > 1) ? buffer.getWritePointer(1) : buffer.getWritePointer(0);
 
-    m_tapeEngine.processStereo(left, right, static_cast<size_t>(numSamples));
+    m_oversampler.process(buffer, std::min(2, numChannels), [this](float* l, float* r, size_t n) {
+        // Update state machine and apply parameter changes to TapeEngine (at the engine's rate)
+        m_controller.updateAndApply(m_tapeEngine, n);
+        m_tapeEngine.processStereo(l, r, n);
+    });
+    m_outputStage.process(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readSettings(m_apvts));
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
 }
 
@@ -107,30 +146,19 @@ juce::AudioProcessorEditor* NeonTapeStopProcessor::createEditor() {
     return new NeonTapeStopEditor(*this);
 }
 
-int NeonTapeStopProcessor::getNumPrograms() { return static_cast<int>(m_presets.size()); }
-int NeonTapeStopProcessor::getCurrentProgram() { return m_currentPresetIndex; }
-void NeonTapeStopProcessor::setCurrentProgram(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) {
-        m_currentPresetIndex = index;
-        m_paramManager.importFromJson(m_presets[index].jsonContent);
-        for (const auto& desc : m_paramManager.getDescriptors()) {
-            if (auto* p = m_apvts.getParameter(desc.id)) {
-                p->setValueNotifyingHost(m_paramManager.getNormalizedValue(desc.id));
-            }
-        }
-    }
-}
-const juce::String NeonTapeStopProcessor::getProgramName(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) return m_presets[index].name;
-    return {};
-}
-void NeonTapeStopProcessor::changeProgramName(int index, const juce::String& newName) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) m_presets[index].name = newName.toStdString();
-}
+// Presets live in the plugin's own menu (ff360_ui::WorkflowBar); the host sees a single program
+int NeonTapeStopProcessor::getNumPrograms() { return 1; }
+int NeonTapeStopProcessor::getCurrentProgram() { return 0; }
+void NeonTapeStopProcessor::setCurrentProgram(int) {}
+const juce::String NeonTapeStopProcessor::getProgramName(int) { return m_presetManager.getCurrentName(); }
+void NeonTapeStopProcessor::changeProgramName(int, const juce::String&) {}
 
 void NeonTapeStopProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = m_apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
+    m_history.writeState(*xml);
+    m_presetManager.writeState(*xml);
+    xml->setAttribute("uiScale", (double)m_editorScale.load());
     copyXmlToBinary(*xml, destData);
 }
 
@@ -138,6 +166,9 @@ void NeonTapeStopProcessor::setStateInformation(const void* data, int sizeInByte
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
     if (xmlState && xmlState->hasTagName(m_apvts.state.getType())) {
         m_apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+        m_history.readState(*xmlState);
+        m_presetManager.readState(*xmlState);
+        m_editorScale.store((float)xmlState->getDoubleAttribute("uiScale", 1.0));
     }
 }
 

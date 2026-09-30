@@ -368,6 +368,12 @@ static bool test_StereoEngine_CorrelationAndBassMono() {
     generateSine(subL, 60.0f, 48000.0f, 0.8f);
     for (size_t i = 0; i < subR.size(); ++i) subR[i] = -subL[i]; // Anti-phase sub
 
+    // The crossover glides to its new frequency (FrequencyGlide, ~80 ms from 20 Hz to 200 Hz)
+    // instead of jumping, so let it arrive before measuring
+    {
+        std::vector<float> settleL(subL), settleR(subR);
+        stereo.processStereo(settleL.data(), settleR.data(), settleL.size());
+    }
     stereo.processStereo(subL.data(), subR.data(), subL.size());
     // Measure residual anti-phase energy vs original input energy
     float diffEnergy = 0.0f;

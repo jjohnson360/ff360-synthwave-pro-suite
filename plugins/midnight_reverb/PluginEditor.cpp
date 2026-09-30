@@ -3,9 +3,15 @@
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 
 MidnightReverbEditor::MidnightReverbEditor(MidnightReverbProcessor& p)
-    : AudioProcessorEditor(&p), m_processor(p)
+    : AudioProcessorEditor(&p), m_processor(p),
+      m_workflowBar(p.getHistory(), p.getPresetManager()),
+      m_outputStrip(p.getApvts(), p.getOutputStage())
 {
     setLookAndFeel(&m_lookAndFeel);
+
+    addAndMakeVisible(m_workflowBar);
+    m_workflowBar.attachKeyboardShortcuts(*this);
+    addAndMakeVisible(m_outputStrip);
 
     // Main Panel
     addAndMakeVisible(m_mainPanel);
@@ -49,7 +55,22 @@ MidnightReverbEditor::MidnightReverbEditor(MidnightReverbProcessor& p)
         m_processor.getApvts(), "synctoggle", m_syncButton);
     addAndMakeVisible(m_syncButton);
 
-    setSize(350, 640);
+
+    // Tooltips: every control explains itself on hover (the editor test fails on any without one)
+    m_algBox.setTooltip("Reverb algorithm.");
+    m_knobs["decay"].slider.setTooltip("Decay: length of the reverb tail.");
+    m_knobs["predelay"].slider.setTooltip("Pre-delay: gap before the reverb starts, in ms (or tempo-synced with SYNC).");
+    m_knobs["lowdamp"].slider.setTooltip("Low Cut: removes lows from the reverb below this frequency.");
+    m_knobs["highdamp"].slider.setTooltip("High Damp: darkens the tail above this frequency.");
+    m_knobs["width"].slider.setTooltip("Width: stereo width of the reverb.");
+    m_faders["ducking"].slider.setTooltip("Ducking: pulls the reverb down while the input plays (or the sidechain, if one is routed in).");
+    m_faders["modulation"].slider.setTooltip("Modulation: adds movement to the tail.");
+    m_faders["mix"].slider.setTooltip("Mix: balance between the dry signal and the reverb.");
+    m_freezeButton.setTooltip("Freeze: holds the current tail indefinitely.");
+    m_syncButton.setTooltip("Sync: locks the pre-delay to the host tempo.");
+
+    // Resizable (75% to 200%, aspect locked), reopening at the size it was left at
+    ff360_ui::EditorScaling::setup(*this, m_processor.getEditorScale());
 }
 
 MidnightReverbEditor::~MidnightReverbEditor() {
@@ -62,10 +83,11 @@ void MidnightReverbEditor::createKnob(const std::string& id, const juce::String&
     k.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, k.slider);
+    ff360_ui::showValuePopup(k.slider, m_processor.getApvts(), id, this);
     
     k.label.setText(name, juce::dontSendNotification);
     k.label.setJustificationType(juce::Justification::centred);
-    k.label.setFont(juce::Font(8.5f, juce::Font::plain));
+    k.label.setFont(ff360_ui::brandFont(8.5f, juce::Font::plain));
     k.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
     addAndMakeVisible(k.slider);
@@ -79,10 +101,11 @@ void MidnightReverbEditor::createFader(const std::string& id, const juce::String
     f.slider.setColour(juce::Slider::thumbColourId, accentColour);
     f.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, f.slider);
+    ff360_ui::showValuePopup(f.slider, m_processor.getApvts(), id, this);
     
     f.label.setText(name, juce::dontSendNotification);
     f.label.setJustificationType(juce::Justification::centred);
-    f.label.setFont(juce::Font(8.5f, juce::Font::plain));
+    f.label.setFont(ff360_ui::brandFont(8.5f, juce::Font::plain));
     f.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
     addAndMakeVisible(f.slider);
@@ -90,7 +113,8 @@ void MidnightReverbEditor::createFader(const std::string& id, const juce::String
 }
 
 void MidnightReverbEditor::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds().toFloat();
+    g.addTransform(ff360_ui::EditorScaling::transformFor(*this)); // draw at the design size
+    auto bounds = ff360_ui::EditorScaling::designBounds().toFloat();
     
     // Background gradient
     juce::ColourGradient bgGrad(juce::Colour(ff360_ui::Colors::MatteCharcoal), 0, 0,
@@ -103,18 +127,23 @@ void MidnightReverbEditor::paint(juce::Graphics& g) {
     g.drawRect(bounds, 1.0f);
     
     // Eyebrow and Title
-    g.setFont(juce::Font(10.0f, juce::Font::bold));
+    g.setFont(ff360_ui::brandFont(10.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold));
     g.drawText("3 * 80S SPATIAL ENGINE", 16, 12, bounds.getWidth() - 32, 12, juce::Justification::left);
     
-    g.setFont(juce::Font(12.0f, juce::Font::bold));
+    g.setFont(ff360_ui::brandFont(12.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::TextDim));
     g.drawText("MIDNIGHT REVERB", 16, 26, bounds.getWidth() - 32, 14, juce::Justification::left);
 }
 
 void MidnightReverbEditor::resized() {
-    auto bounds = getLocalBounds().reduced(16);
+    auto bounds = ff360_ui::EditorScaling::designBounds().reduced(16);
     bounds.removeFromTop(24);
+    bounds.removeFromTop(4);
+    m_workflowBar.setBounds(bounds.removeFromTop(26));
+    bounds.removeFromTop(6);
+    m_outputStrip.setBounds(bounds.removeFromBottom(28));
+    bounds.removeFromBottom(8);
     
     m_mainPanel.setBounds(bounds);
     auto inner = bounds.reduced(14);
@@ -167,6 +196,10 @@ void MidnightReverbEditor::resized() {
     auto& wKnob = m_knobs["width"];
     wKnob.slider.setBounds(leftArea.getCentreX() - knobW/2, leftArea.getY() + 20 + 2 * (knobH + dy + 14), knobW, knobH);
     wKnob.label.setBounds(wKnob.slider.getX() - 10, wKnob.slider.getBottom(), knobW + 20, 14);
+
+    // Laid out at the design size; scale everything to the window
+    ff360_ui::EditorScaling::applyToChildren(*this);
+    m_processor.setEditorScale(ff360_ui::EditorScaling::scaleOf(*this));
 }
 
 #endif

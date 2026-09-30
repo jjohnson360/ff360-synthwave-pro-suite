@@ -4,9 +4,15 @@
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 
 NeonTapeStopEditor::NeonTapeStopEditor(NeonTapeStopProcessor& p)
-    : AudioProcessorEditor(&p), m_processor(p)
+    : AudioProcessorEditor(&p), m_processor(p),
+      m_workflowBar(p.getHistory(), p.getPresetManager()),
+      m_outputStrip(p.getApvts(), p.getOutputStage())
 {
     setLookAndFeel(&m_lookAndFeel);
+
+    addAndMakeVisible(m_workflowBar);
+    m_workflowBar.attachKeyboardShortcuts(*this);
+    addAndMakeVisible(m_outputStrip);
 
     addAndMakeVisible(m_mainPanel);
     addAndMakeVisible(m_scene);
@@ -39,14 +45,27 @@ NeonTapeStopEditor::NeonTapeStopEditor(NeonTapeStopProcessor& p)
     m_mixSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     m_mixAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), "mix", m_mixSlider);
+    ff360_ui::showValuePopup(m_mixSlider, m_processor.getApvts(), "mix", this);
     m_mixLabel.setText("MIX", juce::dontSendNotification);
     m_mixLabel.setJustificationType(juce::Justification::left);
-    m_mixLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    m_mixLabel.setFont(ff360_ui::brandFont(9.0f, juce::Font::bold));
     m_mixLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     addAndMakeVisible(m_mixSlider);
     addAndMakeVisible(m_mixLabel);
 
-    setSize(350, 640);
+
+    // Tooltips: every control explains itself on hover (the editor test fails on any without one)
+    m_triggerBtn.setTooltip("Stops the tape; click again to bring it back up to speed. MIDI note on / off does the same.");
+    m_profileBox.setTooltip("Stop profile: the shape of the slowdown.");
+    m_knobs["slowdown"].slider.setTooltip("Stop Time: how long the tape takes to stop.");
+    m_knobs["pitchcurve"].slider.setTooltip("Pitch Curve: shape of the pitch drop during the stop.");
+    m_knobs["filtermove"].slider.setTooltip("Filter: how much the tone darkens as the tape slows.");
+    m_knobs["recovery"].slider.setTooltip("Recovery: how long the tape takes to get back up to speed.");
+    m_reverseToggle.setTooltip("Reverse Rec: plays the recovery backwards.");
+    m_mixSlider.setTooltip("Mix: balance between the dry signal and the tape stop.");
+
+    // Resizable (75% to 200%, aspect locked), reopening at the size it was left at
+    ff360_ui::EditorScaling::setup(*this, m_processor.getEditorScale());
     startTimerHz(30);
 }
 
@@ -76,10 +95,11 @@ void NeonTapeStopEditor::createKnob(const std::string& id, const juce::String& n
     k.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, k.slider);
+    ff360_ui::showValuePopup(k.slider, m_processor.getApvts(), id, this);
     
     k.label.setText(name, juce::dontSendNotification);
     k.label.setJustificationType(juce::Justification::centred);
-    k.label.setFont(juce::Font(8.5f, juce::Font::plain));
+    k.label.setFont(ff360_ui::brandFont(8.5f, juce::Font::plain));
     k.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
     addAndMakeVisible(k.slider);
@@ -87,7 +107,8 @@ void NeonTapeStopEditor::createKnob(const std::string& id, const juce::String& n
 }
 
 void NeonTapeStopEditor::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds().toFloat();
+    g.addTransform(ff360_ui::EditorScaling::transformFor(*this)); // draw at the design size
+    auto bounds = ff360_ui::EditorScaling::designBounds().toFloat();
     
     juce::ColourGradient bgGrad(juce::Colour(ff360_ui::Colors::MatteCharcoal), 0, 0,
                                 juce::Colour(0xFF131316), 0, bounds.getHeight(), false);
@@ -97,18 +118,23 @@ void NeonTapeStopEditor::paint(juce::Graphics& g) {
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold).withAlpha(0.16f));
     g.drawRect(bounds, 1.0f);
     
-    g.setFont(juce::Font(10.0f, juce::Font::bold));
+    g.setFont(ff360_ui::brandFont(10.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold));
     g.drawText("7 * MUSICAL TAPE STOP EFFECT", 16, 12, bounds.getWidth() - 32, 12, juce::Justification::left);
     
-    g.setFont(juce::Font(12.0f, juce::Font::bold));
+    g.setFont(ff360_ui::brandFont(12.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::TextDim));
     g.drawText("NEON TAPE STOP", 16, 26, bounds.getWidth() - 32, 14, juce::Justification::left);
 }
 
 void NeonTapeStopEditor::resized() {
-    auto bounds = getLocalBounds().reduced(16);
+    auto bounds = ff360_ui::EditorScaling::designBounds().reduced(16);
     bounds.removeFromTop(24);
+    bounds.removeFromTop(4);
+    m_workflowBar.setBounds(bounds.removeFromTop(26));
+    bounds.removeFromTop(6);
+    m_outputStrip.setBounds(bounds.removeFromBottom(28));
+    bounds.removeFromBottom(8);
     
     m_mainPanel.setBounds(bounds);
     auto inner = bounds.reduced(14);
@@ -155,6 +181,10 @@ void NeonTapeStopEditor::resized() {
     auto mixRow = inner.removeFromTop(20);
     m_mixLabel.setBounds(mixRow.removeFromLeft(40));
     m_mixSlider.setBounds(mixRow.withTrimmedTop(6).withTrimmedBottom(6));
+
+    // Laid out at the design size; scale everything to the window
+    ff360_ui::EditorScaling::applyToChildren(*this);
+    m_processor.setEditorScale(ff360_ui::EditorScaling::scaleOf(*this));
 }
 
 #endif

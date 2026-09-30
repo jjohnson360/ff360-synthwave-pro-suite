@@ -257,7 +257,10 @@ jobs:
           echo "Attaching assets:"
           printf '  %s\n' "${ASSETS[@]}"
 
+          # Tag the commit that was built (without --target, a new tag lands on the default
+          # branch, which is wrong when the workflow runs on a feature branch)
           gh release create "$TAG" "${ASSETS[@]}" \
+            --target "$GITHUB_SHA" \
             --title "$TITLE" \
             "${NOTES_ARGS[@]}" \
             "${STATUS_ARGS[@]}"

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DesignTokens.h"
+#include "Fonts.h"
 
 #if __has_include(<juce_gui_basics/juce_gui_basics.h>)
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -87,7 +88,7 @@ public:
         p3.addTriangle(cx, cy + 2, cx + 14, cy + 30, cx - 14, cy + 30);
         g.strokePath(p3, juce::PathStrokeType(1.2f));
         
-        g.setFont(juce::Font(15.0f, juce::Font::bold).withStyle(juce::Font::italic));
+        g.setFont(ff360_ui::brandFont(15.0f, juce::Font::bold).withStyle(juce::Font::italic));
         g.setColour(juce::Colour(Colors::AccessibleSky));
         g.drawText("Neon Chorus", bounds.withTrimmedTop(8).withHeight(20), juce::Justification::centredTop);
     }

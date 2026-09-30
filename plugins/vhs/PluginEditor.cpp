@@ -3,9 +3,15 @@
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 
 VHSPluginEditor::VHSPluginEditor(VHSPluginProcessor& p)
-    : AudioProcessorEditor(&p), m_processor(p)
+    : AudioProcessorEditor(&p), m_processor(p),
+      m_workflowBar(p.getHistory(), p.getPresetManager()),
+      m_outputStrip(p.getApvts(), p.getOutputStage())
 {
     setLookAndFeel(&m_lookAndFeel);
+
+    addAndMakeVisible(m_workflowBar);
+    m_workflowBar.attachKeyboardShortcuts(*this);
+    addAndMakeVisible(m_outputStrip);
 
     // Main Panel
     addAndMakeVisible(m_mainPanel);
@@ -15,20 +21,26 @@ VHSPluginEditor::VHSPluginEditor(VHSPluginProcessor& p)
 
     // Hero Knob
     m_degradeKnob = std::make_unique<ff360_ui::FF360_HeroKnob>("DEGRADE");
-    if (auto* param = m_processor.getApvts().getRawParameterValue("degrade")) {
-        m_degradeKnob->setValue(param->load() * 0.01f, juce::dontSendNotification);
+    if (auto* param = m_processor.getApvts().getParameter("degrade")) {
+        // Two-way link: the knob follows presets, undo, A/B and automation, and its drags are
+        // proper edit gestures (so hosts record them and undo sees them)
+        m_degradeAttach = std::make_unique<juce::ParameterAttachment>(*param, [this](float plain) {
+            m_degradeKnob->setValue(plain * 0.01f, juce::dontSendNotification);
+        });
+        m_degradeKnob->onDragStart = [this] { m_degradeAttach->beginGesture(); };
+        m_degradeKnob->onDragEnd = [this] { m_degradeAttach->endGesture(); };
+        m_degradeKnob->onValueChanged = [this](float val) { m_degradeAttach->setValueAsPartOfGesture(val * 100.0f); };
+        m_degradeKnob->onResetToDefault = [this, param] {
+            m_degradeAttach->setValueAsCompleteGesture(param->convertFrom0to1(param->getDefaultValue()));
+        };
+        m_degradeAttach->sendInitialUpdate();
     }
-    m_degradeKnob->onValueChanged = [this](float val) {
-        if (auto* param = m_processor.getApvts().getParameter("degrade")) {
-            param->setValueNotifyingHost(val);
-        }
-    };
     addAndMakeVisible(m_degradeKnob.get());
 
     m_ff360Label.setText("ff360_labs", juce::dontSendNotification);
     m_ff360Label.setJustificationType(juce::Justification::centredRight);
     m_ff360Label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
-    m_ff360Label.setFont(juce::Font(9.0f, juce::Font::plain));
+    m_ff360Label.setFont(ff360_ui::brandFont(9.0f, juce::Font::plain));
     addAndMakeVisible(m_ff360Label);
 
     // 10 parameter knobs (2 rows of 5)
@@ -38,22 +50,23 @@ VHSPluginEditor::VHSPluginEditor(VHSPluginProcessor& p)
     createKnob("hiss", "Hiss");
     createKnob("dropouts", "Dropouts");
     
-    createKnob("saturation", "Saturate");
+    createKnob("sat", "Saturate");
     createKnob("bitcrush", "Bit Red.");
-    createKnob("hpf", "HF Rolloff");
-    createKnob("stereo_drift", "St. Drift");
-    createKnob("pitch_drift", "Pitch Drift");
+    createKnob("hfloss", "HF Rolloff");
+    createKnob("stereodrift", "St. Drift");
+    createKnob("drift", "Pitch Drift");
 
     // Mode Selector (dummy buttons for now)
     m_modePrevButton.setButtonText("<");
     m_modeNextButton.setButtonText(">");
     m_modeLabel.setText("MODE - VHS", juce::dontSendNotification);
     m_modeLabel.setJustificationType(juce::Justification::centred);
-    m_modeLabel.setFont(juce::Font(10.0f, juce::Font::bold));
+    m_modeLabel.setFont(ff360_ui::brandFont(10.0f, juce::Font::bold));
     m_modeLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::MetallicGold));
     
-    addAndMakeVisible(m_modePrevButton);
-    addAndMakeVisible(m_modeNextButton);
+    // Hidden until tape modes exist (the arrows had no function); addAndMakeVisible to bring them back
+    addChildComponent(m_modePrevButton);
+    addChildComponent(m_modeNextButton);
     addAndMakeVisible(m_modeLabel);
 
     // Mix Slider
@@ -61,20 +74,37 @@ VHSPluginEditor::VHSPluginEditor(VHSPluginProcessor& p)
     m_mixSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     m_mixAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), "mix", m_mixSlider);
+    ff360_ui::showValuePopup(m_mixSlider, m_processor.getApvts(), "mix", this);
     
     m_mixLabel.setText("MIX", juce::dontSendNotification);
-    m_mixLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    m_mixLabel.setFont(ff360_ui::brandFont(9.0f, juce::Font::bold));
     m_mixLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
-    m_mixValueLabel.setText("100%", juce::dontSendNotification);
-    m_mixValueLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    ff360_ui::bindValueLabel(m_mixSlider, m_mixValueLabel);
+    m_mixValueLabel.setFont(ff360_ui::brandFont(9.0f, juce::Font::bold));
     m_mixValueLabel.setJustificationType(juce::Justification::centredRight);
     
     addAndMakeVisible(m_mixSlider);
     addAndMakeVisible(m_mixLabel);
     addAndMakeVisible(m_mixValueLabel);
 
-    setSize(350, 640);
+
+    // Tooltips: every control explains itself on hover (the editor test fails on any without one)
+    m_degradeKnob->setTooltip("DEGRADE: one-knob tape wear. Raises all the tape effects together. Double-click to reset.");
+    m_knobs["wow"].slider.setTooltip("Wow: slow, wide pitch wobble.");
+    m_knobs["flutter"].slider.setTooltip("Flutter: fast, fine pitch wobble.");
+    m_knobs["noise"].slider.setTooltip("Noise: background tape noise.");
+    m_knobs["hiss"].slider.setTooltip("Hiss: high-frequency tape hiss.");
+    m_knobs["dropouts"].slider.setTooltip("Dropouts: random level drops, like worn tape.");
+    m_knobs["sat"].slider.setTooltip("Saturate: tape saturation.");
+    m_knobs["bitcrush"].slider.setTooltip("Bit Reduction: lowers the bit depth for a lo-fi digital edge.");
+    m_knobs["hfloss"].slider.setTooltip("HF Rolloff: the dulled top end of worn tape.");
+    m_knobs["stereodrift"].slider.setTooltip("Stereo Drift: left and right slowly drift apart.");
+    m_knobs["drift"].slider.setTooltip("Pitch Drift: slow drift in pitch.");
+    m_mixSlider.setTooltip("Mix: balance between the dry signal and the tape.");
+
+    // Resizable (75% to 200%, aspect locked), reopening at the size it was left at
+    ff360_ui::EditorScaling::setup(*this, m_processor.getEditorScale());
 }
 
 VHSPluginEditor::~VHSPluginEditor() {
@@ -87,10 +117,11 @@ void VHSPluginEditor::createKnob(const std::string& id, const juce::String& name
     k.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, k.slider);
+    ff360_ui::showValuePopup(k.slider, m_processor.getApvts(), id, this);
     
     k.label.setText(name, juce::dontSendNotification);
     k.label.setJustificationType(juce::Justification::centred);
-    k.label.setFont(juce::Font(8.5f, juce::Font::plain));
+    k.label.setFont(ff360_ui::brandFont(8.5f, juce::Font::plain));
     k.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
     addAndMakeVisible(k.slider);
@@ -98,7 +129,8 @@ void VHSPluginEditor::createKnob(const std::string& id, const juce::String& name
 }
 
 void VHSPluginEditor::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds().toFloat();
+    g.addTransform(ff360_ui::EditorScaling::transformFor(*this)); // draw at the design size
+    auto bounds = ff360_ui::EditorScaling::designBounds().toFloat();
     
     // Background gradient
     juce::ColourGradient bgGrad(juce::Colour(ff360_ui::Colors::MatteCharcoal), 0, 0,
@@ -111,18 +143,23 @@ void VHSPluginEditor::paint(juce::Graphics& g) {
     g.drawRect(bounds, 1.0f);
     
     // Eyebrow and Title
-    g.setFont(juce::Font(10.0f, juce::Font::bold));
+    g.setFont(ff360_ui::brandFont(10.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold));
     g.drawText("1 * TAPE DEGRADATION", 16, 12, bounds.getWidth() - 32, 12, juce::Justification::left);
     
-    g.setFont(juce::Font(12.0f, juce::Font::bold));
+    g.setFont(ff360_ui::brandFont(12.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::TextDim));
     g.drawText("VHS", 16, 26, bounds.getWidth() - 32, 14, juce::Justification::left);
 }
 
 void VHSPluginEditor::resized() {
-    auto bounds = getLocalBounds().reduced(16);
+    auto bounds = ff360_ui::EditorScaling::designBounds().reduced(16);
     bounds.removeFromTop(24); // header space
+    bounds.removeFromTop(4);
+    m_workflowBar.setBounds(bounds.removeFromTop(26));
+    bounds.removeFromTop(6);
+    m_outputStrip.setBounds(bounds.removeFromBottom(28));
+    bounds.removeFromBottom(8);
     
     m_mainPanel.setBounds(bounds);
     auto inner = bounds.reduced(14);
@@ -153,7 +190,7 @@ void VHSPluginEditor::resized() {
     
     inner.removeFromTop(12);
     auto row2 = inner.removeFromTop(60);
-    const char* r2[] = {"saturation", "bitcrush", "hpf", "stereo_drift", "pitch_drift"};
+    const char* r2[] = {"sat", "bitcrush", "hfloss", "stereodrift", "drift"};
     for (int i = 0; i < 5; ++i) {
         auto& k = m_knobs[r2[i]];
         k.slider.setBounds(row2.getX() + i * (knobW + spacing), row2.getY(), knobW, knobH);
@@ -175,6 +212,10 @@ void VHSPluginEditor::resized() {
     m_mixLabel.setBounds(mixRow.getX(), mixRow.getY(), 40, 12);
     m_mixValueLabel.setBounds(mixRow.getRight() - 40, mixRow.getY(), 40, 12);
     m_mixSlider.setBounds(mixRow.getX(), mixRow.getY() + 14, mixRow.getWidth(), 6);
+
+    // Laid out at the design size; scale everything to the window
+    ff360_ui::EditorScaling::applyToChildren(*this);
+    m_processor.setEditorScale(ff360_ui::EditorScaling::scaleOf(*this));
 }
 
 #endif

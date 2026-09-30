@@ -41,6 +41,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout NeonWidthProcessor::createPa
         juce::ParameterID{ "mix", 1 }, "Mix", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
+    // Output trim, auto gain and bypass (ff360::FF360_DSP_OutputStage)
+    ff360_ui::output::addParameters(params, true);
+
     return { params.begin(), params.end() };
 }
 
@@ -49,10 +52,12 @@ NeonWidthProcessor::NeonWidthProcessor()
                      .withInput("Input", juce::AudioChannelSet::stereo(), true)
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
-      m_presets(ff360::getNeonWidthPresets()) {
+      m_history(*this, {}, { "bypass" }),
+      m_presetManager(m_apvts, m_history, "Neon Width", ff360::getNeonWidthPresets(), { "bypass" }) {
 }
 
 void NeonWidthProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
+    m_outputStage.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_stereoEngine.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_meteringBridge.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_paramManager.prepare(sampleRate);
@@ -75,6 +80,9 @@ void NeonWidthProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
 
     if (numChannels == 0 || numSamples == 0) return;
 
+    // Keep the input for bypass and auto gain
+    m_outputStage.captureDry(buffer.getReadPointer(0), buffer.getReadPointer(numChannels > 1 ? 1 : 0), static_cast<size_t>(numSamples));
+
     ff360::StereoParameters params;
     params.microDelayMs = m_apvts.getRawParameterValue("microdelay")->load();
     params.haasWidth = m_apvts.getRawParameterValue("haas")->load() * 0.01f;
@@ -92,6 +100,7 @@ void NeonWidthProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     float* right = (numChannels > 1) ? buffer.getWritePointer(1) : buffer.getWritePointer(0);
 
     m_stereoEngine.processStereo(left, right, static_cast<size_t>(numSamples));
+    m_outputStage.process(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readSettings(m_apvts));
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
 
     // Capture a small sample block for the goniometer, under a spinlock so the
@@ -118,30 +127,19 @@ void NeonWidthProcessor::getLatestScopeBuffers(std::array<float, kScopeBufferSiz
     std::copy(m_latestR.begin(), m_latestR.begin() + static_cast<long>(outCount), outR.begin());
 }
 
-int NeonWidthProcessor::getNumPrograms() { return static_cast<int>(m_presets.size()); }
-int NeonWidthProcessor::getCurrentProgram() { return m_currentPresetIndex; }
-void NeonWidthProcessor::setCurrentProgram(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) {
-        m_currentPresetIndex = index;
-        m_paramManager.importFromJson(m_presets[index].jsonContent);
-        for (const auto& desc : m_paramManager.getDescriptors()) {
-            if (auto* p = m_apvts.getParameter(desc.id)) {
-                p->setValueNotifyingHost(m_paramManager.getNormalizedValue(desc.id));
-            }
-        }
-    }
-}
-const juce::String NeonWidthProcessor::getProgramName(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) return m_presets[index].name;
-    return {};
-}
-void NeonWidthProcessor::changeProgramName(int index, const juce::String& newName) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) m_presets[index].name = newName.toStdString();
-}
+// Presets live in the plugin's own menu (ff360_ui::WorkflowBar); the host sees a single program
+int NeonWidthProcessor::getNumPrograms() { return 1; }
+int NeonWidthProcessor::getCurrentProgram() { return 0; }
+void NeonWidthProcessor::setCurrentProgram(int) {}
+const juce::String NeonWidthProcessor::getProgramName(int) { return m_presetManager.getCurrentName(); }
+void NeonWidthProcessor::changeProgramName(int, const juce::String&) {}
 
 void NeonWidthProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = m_apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
+    m_history.writeState(*xml);
+    m_presetManager.writeState(*xml);
+    xml->setAttribute("uiScale", (double)m_editorScale.load());
     copyXmlToBinary(*xml, destData);
 }
 
@@ -149,6 +147,9 @@ void NeonWidthProcessor::setStateInformation(const void* data, int sizeInBytes) 
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
     if (xmlState && xmlState->hasTagName(m_apvts.state.getType())) {
         m_apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+        m_history.readState(*xmlState);
+        m_presetManager.readState(*xmlState);
+        m_editorScale.store((float)xmlState->getDoubleAttribute("uiScale", 1.0));
     }
 }
 

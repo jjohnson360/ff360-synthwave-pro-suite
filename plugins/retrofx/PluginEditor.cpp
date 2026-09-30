@@ -3,9 +3,15 @@
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 
 RetroFXEditor::RetroFXEditor(RetroFXProcessor& p)
-    : AudioProcessorEditor(&p), m_processor(p)
+    : AudioProcessorEditor(&p), m_processor(p),
+      m_workflowBar(p.getHistory(), p.getPresetManager()),
+      m_outputStrip(p.getApvts(), p.getOutputStage())
 {
     setLookAndFeel(&m_lookAndFeel);
+
+    addAndMakeVisible(m_workflowBar);
+    m_workflowBar.attachKeyboardShortcuts(*this);
+    addAndMakeVisible(m_outputStrip);
 
     addAndMakeVisible(m_mainPanel);
     addAndMakeVisible(m_scene);
@@ -49,9 +55,10 @@ RetroFXEditor::RetroFXEditor(RetroFXProcessor& p)
     m_mixSlider.setColour(juce::Slider::thumbColourId, juce::Colour(ff360_ui::Colors::MetallicGold));
     m_mixAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), "mix", m_mixSlider);
+    ff360_ui::showValuePopup(m_mixSlider, m_processor.getApvts(), "mix", this);
     m_mixLabel.setText("MIX", juce::dontSendNotification);
     m_mixLabel.setJustificationType(juce::Justification::centred);
-    m_mixLabel.setFont(juce::Font(8.5f, juce::Font::plain));
+    m_mixLabel.setFont(ff360_ui::brandFont(8.5f, juce::Font::plain));
     m_mixLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     addAndMakeVisible(m_mixSlider);
     addAndMakeVisible(m_mixLabel);
@@ -60,7 +67,23 @@ RetroFXEditor::RetroFXEditor(RetroFXProcessor& p)
     m_generateBtn.setButtonText("GENERATE FX");
     addAndMakeVisible(m_generateBtn);
 
-    setSize(350, 640);
+
+    // Tooltips: every control explains itself on hover (the editor test fails on any without one)
+    m_generatorBox.setTooltip("Type of FX to generate.");
+    m_syncBox.setTooltip("Duration: synced to the host tempo, or free (set by Length).");
+    m_knobs["intensity"].slider.setTooltip("Intensity: how strong the generated FX is.");
+    m_knobs["startpitch"].slider.setTooltip("Start Pitch: where the sweep starts, in semitones.");
+    m_knobs["endpitch"].slider.setTooltip("End Pitch: where the sweep ends, in semitones.");
+    m_knobs["length"].slider.setTooltip("Length: duration in seconds when Duration is set to free.");
+    m_knobs["seed"].slider.setTooltip("Seed: the same seed recreates the same FX.");
+    m_mixSlider.setTooltip("Mix: balance between the input and the generated FX.");
+    m_generateBtn.setTooltip("Generates the FX now. A MIDI note does the same.");
+
+    // Queued for the audio thread, which owns the generator
+    m_generateBtn.onClick = [this] { m_processor.requestGenerate(); };
+
+    // Resizable (75% to 200%, aspect locked), reopening at the size it was left at
+    ff360_ui::EditorScaling::setup(*this, m_processor.getEditorScale());
 }
 
 RetroFXEditor::~RetroFXEditor() {
@@ -73,10 +96,11 @@ void RetroFXEditor::createKnob(const std::string& id, const juce::String& name) 
     k.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, k.slider);
+    ff360_ui::showValuePopup(k.slider, m_processor.getApvts(), id, this);
     
     k.label.setText(name, juce::dontSendNotification);
     k.label.setJustificationType(juce::Justification::centred);
-    k.label.setFont(juce::Font(8.5f, juce::Font::plain));
+    k.label.setFont(ff360_ui::brandFont(8.5f, juce::Font::plain));
     k.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
     addAndMakeVisible(k.slider);
@@ -84,7 +108,8 @@ void RetroFXEditor::createKnob(const std::string& id, const juce::String& name) 
 }
 
 void RetroFXEditor::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds().toFloat();
+    g.addTransform(ff360_ui::EditorScaling::transformFor(*this)); // draw at the design size
+    auto bounds = ff360_ui::EditorScaling::designBounds().toFloat();
     
     // Background gradient
     juce::ColourGradient bgGrad(juce::Colour(ff360_ui::Colors::MatteCharcoal), 0, 0,
@@ -97,18 +122,23 @@ void RetroFXEditor::paint(juce::Graphics& g) {
     g.drawRect(bounds, 1.0f);
     
     // Eyebrow and Title
-    g.setFont(juce::Font(10.0f, juce::Font::bold));
+    g.setFont(ff360_ui::brandFont(10.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold));
     g.drawText("5 * TRANSITIONS & FX GENERATOR", 16, 12, bounds.getWidth() - 32, 12, juce::Justification::left);
     
-    g.setFont(juce::Font(12.0f, juce::Font::bold));
+    g.setFont(ff360_ui::brandFont(12.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::TextDim));
     g.drawText("RETROFX", 16, 26, bounds.getWidth() - 32, 14, juce::Justification::left);
 }
 
 void RetroFXEditor::resized() {
-    auto bounds = getLocalBounds().reduced(16);
+    auto bounds = ff360_ui::EditorScaling::designBounds().reduced(16);
     bounds.removeFromTop(24);
+    bounds.removeFromTop(4);
+    m_workflowBar.setBounds(bounds.removeFromTop(26));
+    bounds.removeFromTop(6);
+    m_outputStrip.setBounds(bounds.removeFromBottom(28));
+    bounds.removeFromBottom(8);
     
     m_mainPanel.setBounds(bounds);
     auto inner = bounds.reduced(14);
@@ -152,6 +182,10 @@ void RetroFXEditor::resized() {
     // Generate Button
     inner.removeFromTop(20);
     m_generateBtn.setBounds(inner.removeFromTop(40).reduced(20, 0));
+
+    // Laid out at the design size; scale everything to the window
+    ff360_ui::EditorScaling::applyToChildren(*this);
+    m_processor.setEditorScale(ff360_ui::EditorScaling::scaleOf(*this));
 }
 
 #endif

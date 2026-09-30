@@ -29,6 +29,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout VHSPluginProcessor::createPa
     makeFloatParam("outGain", "Output Gain", -24.0f, 24.0f, 0.0f, "dB");
     makeFloatParam("mix", "Mix", 0.0f, 100.0f, 100.0f);
 
+    // Oversampling around the engine (ff360_ui::Oversampler)
+    ff360_ui::Oversampler::addParameter(params); // Off / 2x (default) / 4x
+
+    // Output trim, auto gain and bypass (ff360::FF360_DSP_OutputStage)
+    ff360_ui::output::addParameters(params, true, false);
+    ff360_ui::output::addDeltaParameter(params); // hear only what the effect adds
+
     return { params.begin(), params.end() };
 }
 
@@ -38,13 +45,39 @@ VHSPluginProcessor::VHSPluginProcessor()
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
       m_degradeMacro(ff360::FF360_DSP_MacroSystem::createVhsDegradeMacro()),
-      m_presets(ff360::getVhsPresets()) {
+      m_history(*this, {}, { "bypass", "delta", "oversampling" }),
+      m_presetManager(m_apvts, m_history, "VHS", ff360::getVhsPresets(), { "bypass", "delta", "oversampling" }) {
 }
 
 void VHSPluginProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
-    m_tapeEngine.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
+    m_baseRate = sampleRate;
+    m_maxBlock = samplesPerBlock;
+    m_outputStage.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_meteringBridge.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_paramManager.prepare(sampleRate);
+    m_oversampler.prepare(2, samplesPerBlock);
+    applyOversampling(ff360_ui::Oversampler::readOrder(m_apvts));
+}
+
+void VHSPluginProcessor::applyOversampling(int order) {
+    m_oversampler.setOrder(order);
+    const double rate = m_baseRate * m_oversampler.getFactor();
+    const size_t block = static_cast<size_t>(m_maxBlock * m_oversampler.getFactor());
+    m_tapeEngine.prepare(rate, block);
+
+    // The host compensates this; the dry path (bypass, auto gain) is delayed to match
+    m_deltaTap.prepare(rate, block);
+
+    const int latency = m_oversampler.getLatencySamples();
+    m_outputStage.setDryDelay(static_cast<size_t>(latency));
+    setLatencySamples(latency);
+}
+
+void VHSPluginProcessor::handleAsyncUpdate() {
+    // The Oversampling setting changed: re-prepare with the audio thread held off
+    suspendProcessing(true);
+    applyOversampling(ff360_ui::Oversampler::readOrder(m_apvts));
+    suspendProcessing(false);
 }
 
 void VHSPluginProcessor::releaseResources() {
@@ -58,6 +91,13 @@ void VHSPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     const int numChannels = buffer.getNumChannels();
 
     if (numChannels == 0 || numSamples == 0) return;
+
+    // Oversampling setting changed: switch on the message thread (it re-prepares the engine)
+    if (ff360_ui::Oversampler::readOrder(m_apvts) != m_oversampler.getOrder())
+        triggerAsyncUpdate();
+
+    // Keep the input for bypass and auto gain
+    m_outputStage.captureDry(buffer.getReadPointer(0), buffer.getReadPointer(numChannels > 1 ? 1 : 0), static_cast<size_t>(numSamples));
 
     // Read and update parameters
     const float degradeVal = m_apvts.getRawParameterValue("degrade")->load() * 0.01f;
@@ -99,7 +139,7 @@ void VHSPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     }
 
     params.inputGainDb = m_apvts.getRawParameterValue("inGain")->load();
-    params.outputGainDb = m_apvts.getRawParameterValue("outGain")->load();
+    params.outputGainDb = 0.0f; // "outGain" is the post-mix output trim, applied by m_outputStage
     params.mix = m_apvts.getRawParameterValue("mix")->load() * 0.01f;
 
     m_tapeEngine.setParameters(params);
@@ -108,9 +148,15 @@ void VHSPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     float* left = buffer.getWritePointer(0);
     float* right = (numChannels > 1) ? buffer.getWritePointer(1) : buffer.getWritePointer(0);
 
-    m_tapeEngine.processStereo(left, right, static_cast<size_t>(numSamples));
+    const bool delta = ff360_ui::output::readDelta(m_apvts);
+    m_oversampler.process(buffer, std::min(2, numChannels), [this, delta](float* l, float* r, size_t n) {
+        m_deltaTap.capture(l, r, n);
+        m_tapeEngine.processStereo(l, r, n);
+        m_deltaTap.apply(l, r, n, delta, 1.0f); // delta: the difference the tape makes
+    });
 
     // Post-Phase-10 precision metering
+    m_outputStage.process(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readSettings(m_apvts));
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
 }
 
@@ -118,34 +164,19 @@ juce::AudioProcessorEditor* VHSPluginProcessor::createEditor() {
     return new VHSPluginEditor(*this);
 }
 
-int VHSPluginProcessor::getNumPrograms() { return static_cast<int>(m_presets.size()); }
-int VHSPluginProcessor::getCurrentProgram() { return m_currentPresetIndex; }
-void VHSPluginProcessor::setCurrentProgram(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) {
-        m_currentPresetIndex = index;
-        m_paramManager.importFromJson(m_presets[index].jsonContent);
-        for (const auto& desc : m_paramManager.getDescriptors()) {
-            if (auto* p = m_apvts.getParameter(desc.id)) {
-                p->setValueNotifyingHost(m_paramManager.getNormalizedValue(desc.id));
-            }
-        }
-    }
-}
-const juce::String VHSPluginProcessor::getProgramName(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) {
-        return m_presets[index].name;
-    }
-    return {};
-}
-void VHSPluginProcessor::changeProgramName(int index, const juce::String& newName) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) {
-        m_presets[index].name = newName.toStdString();
-    }
-}
+// Presets live in the plugin's own menu (ff360_ui::WorkflowBar); the host sees a single program
+int VHSPluginProcessor::getNumPrograms() { return 1; }
+int VHSPluginProcessor::getCurrentProgram() { return 0; }
+void VHSPluginProcessor::setCurrentProgram(int) {}
+const juce::String VHSPluginProcessor::getProgramName(int) { return m_presetManager.getCurrentName(); }
+void VHSPluginProcessor::changeProgramName(int, const juce::String&) {}
 
 void VHSPluginProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = m_apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
+    m_history.writeState(*xml);
+    m_presetManager.writeState(*xml);
+    xml->setAttribute("uiScale", (double)m_editorScale.load());
     copyXmlToBinary(*xml, destData);
 }
 
@@ -153,6 +184,9 @@ void VHSPluginProcessor::setStateInformation(const void* data, int sizeInBytes) 
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
     if (xmlState && xmlState->hasTagName(m_apvts.state.getType())) {
         m_apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+        m_history.readState(*xmlState);
+        m_presetManager.readState(*xmlState);
+        m_editorScale.store((float)xmlState->getDoubleAttribute("uiScale", 1.0));
     }
 }
 

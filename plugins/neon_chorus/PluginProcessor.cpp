@@ -43,6 +43,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout NeonChorusProcessor::createP
     params.push_back(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID{ "quad", 1 }, "Quad Chorus (4-Voice)", true));
 
+    // Tempo sync: the LFO runs one cycle per note length at the host tempo (RATE is ignored)
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ "sync", 1 }, "Tempo Sync", false));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID{ "syncdiv", 1 }, "Sync Rate", syncDivisionNames(), 3)); // 1/2
+
+    // Output trim, auto gain and bypass (ff360::FF360_DSP_OutputStage)
+    ff360_ui::output::addParameters(params, true);
+    ff360_ui::output::addDeltaParameter(params); // hear only what the effect adds
+
     return { params.begin(), params.end() };
 }
 
@@ -51,10 +61,13 @@ NeonChorusProcessor::NeonChorusProcessor()
                      .withInput("Input", juce::AudioChannelSet::stereo(), true)
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
-      m_presets(ff360::getNeonChorusPresets()) {
+      m_history(*this, {}, { "bypass", "delta" }),
+      m_presetManager(m_apvts, m_history, "Neon Chorus", ff360::getNeonChorusPresets(), { "bypass", "delta" }) {
 }
 
 void NeonChorusProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
+    m_outputStage.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
+    m_deltaTap.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_chorusEngine.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_meteringBridge.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_paramManager.prepare(sampleRate);
@@ -72,8 +85,18 @@ void NeonChorusProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
 
     if (numChannels == 0 || numSamples == 0) return;
 
+    // Keep the input for bypass and auto gain
+    m_outputStage.captureDry(buffer.getReadPointer(0), buffer.getReadPointer(numChannels > 1 ? 1 : 0), static_cast<size_t>(numSamples));
+
     ff360::ModulationParameters params;
     params.rateHz = m_apvts.getRawParameterValue("rate")->load();
+    if (m_apvts.getRawParameterValue("sync")->load() > 0.5f) {
+        double bpm = 120.0;
+        if (auto* playHead = getPlayHead())
+            if (auto pos = playHead->getPosition())
+                if (pos->getBpm().hasValue()) bpm = *pos->getBpm();
+        params.rateHz = syncedRateHz(static_cast<int>(m_apvts.getRawParameterValue("syncdiv")->load()), bpm);
+    }
     params.depth = m_apvts.getRawParameterValue("depth")->load() * 0.01f;
     params.width = m_apvts.getRawParameterValue("width")->load() * 0.01f;
     params.detune = m_apvts.getRawParameterValue("detune")->load() * 0.01f;
@@ -91,38 +114,37 @@ void NeonChorusProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     float* left = buffer.getWritePointer(0);
     float* right = (numChannels > 1) ? buffer.getWritePointer(1) : buffer.getWritePointer(0);
 
+    m_deltaTap.capture(left, right, static_cast<size_t>(numSamples));
     m_chorusEngine.processStereo(left, right, static_cast<size_t>(numSamples));
+    // Delta: the chorus voices alone, at their mix level (the engine mixes lerp(dry, wet, mix))
+    m_deltaTap.apply(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readDelta(m_apvts), 1.0f - params.mix);
+    m_outputStage.process(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readSettings(m_apvts));
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
+}
+
+float NeonChorusProcessor::syncedRateHz(int divisionIndex, double bpm) {
+    static constexpr double beatsPerCycle[] = { 16.0, 8.0, 4.0, 2.0, 1.0, 0.5, 0.25 };
+    const double beats = beatsPerCycle[juce::jlimit(0, 6, divisionIndex)];
+    return static_cast<float>((juce::jlimit(20.0, 999.0, bpm) / 60.0) / beats);
 }
 
 juce::AudioProcessorEditor* NeonChorusProcessor::createEditor() {
     return new NeonChorusEditor(*this);
 }
 
-int NeonChorusProcessor::getNumPrograms() { return static_cast<int>(m_presets.size()); }
-int NeonChorusProcessor::getCurrentProgram() { return m_currentPresetIndex; }
-void NeonChorusProcessor::setCurrentProgram(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) {
-        m_currentPresetIndex = index;
-        m_paramManager.importFromJson(m_presets[index].jsonContent);
-        for (const auto& desc : m_paramManager.getDescriptors()) {
-            if (auto* p = m_apvts.getParameter(desc.id)) {
-                p->setValueNotifyingHost(m_paramManager.getNormalizedValue(desc.id));
-            }
-        }
-    }
-}
-const juce::String NeonChorusProcessor::getProgramName(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) return m_presets[index].name;
-    return {};
-}
-void NeonChorusProcessor::changeProgramName(int index, const juce::String& newName) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) m_presets[index].name = newName.toStdString();
-}
+// Presets live in the plugin's own menu (ff360_ui::WorkflowBar); the host sees a single program
+int NeonChorusProcessor::getNumPrograms() { return 1; }
+int NeonChorusProcessor::getCurrentProgram() { return 0; }
+void NeonChorusProcessor::setCurrentProgram(int) {}
+const juce::String NeonChorusProcessor::getProgramName(int) { return m_presetManager.getCurrentName(); }
+void NeonChorusProcessor::changeProgramName(int, const juce::String&) {}
 
 void NeonChorusProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = m_apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
+    m_history.writeState(*xml);
+    m_presetManager.writeState(*xml);
+    xml->setAttribute("uiScale", (double)m_editorScale.load());
     copyXmlToBinary(*xml, destData);
 }
 
@@ -130,6 +152,9 @@ void NeonChorusProcessor::setStateInformation(const void* data, int sizeInBytes)
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
     if (xmlState && xmlState->hasTagName(m_apvts.state.getType())) {
         m_apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+        m_history.readState(*xmlState);
+        m_presetManager.readState(*xmlState);
+        m_editorScale.store((float)xmlState->getDoubleAttribute("uiScale", 1.0));
     }
 }
 

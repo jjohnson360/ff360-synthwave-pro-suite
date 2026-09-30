@@ -3,9 +3,15 @@
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 
 CyberpunkGlitchEditor::CyberpunkGlitchEditor(CyberpunkGlitchProcessor& p)
-    : AudioProcessorEditor(&p), m_processor(p)
+    : AudioProcessorEditor(&p), m_processor(p),
+      m_workflowBar(p.getHistory(), p.getPresetManager()),
+      m_outputStrip(p.getApvts(), p.getOutputStage())
 {
     setLookAndFeel(&m_lookAndFeel);
+
+    addAndMakeVisible(m_workflowBar);
+    m_workflowBar.attachKeyboardShortcuts(*this);
+    addAndMakeVisible(m_outputStrip);
 
     addAndMakeVisible(m_mainPanel);
     addAndMakeVisible(m_scene);
@@ -39,7 +45,22 @@ CyberpunkGlitchEditor::CyberpunkGlitchEditor(CyberpunkGlitchProcessor& p)
     createKnob("mix", "MIX");
     createKnob("scsensitivity", "SC TRIG");
 
-    setSize(350, 640);
+
+    // Tooltips: every control explains itself on hover (the editor test fails on any without one)
+    m_divisionBox.setTooltip("Division: grid size of the glitch slices, synced to the host tempo.");
+    m_freezeToggle.setTooltip("Freeze: holds and repeats the current buffer.");
+    m_reverseToggle.setTooltip("Reverse: plays the slices backwards.");
+    m_faders["probability"].slider.setTooltip("Probability: chance that each grid step gets glitched.");
+    m_faders["filter"].slider.setTooltip("Filter: low-pass cutoff.");
+    m_knobs["bitcrush"].slider.setTooltip("Bitcrush: bit reduction for a harsher, digital sound.");
+    m_knobs["pitch"].slider.setTooltip("Pitch: pitch shift of the slices, in semitones.");
+    m_knobs["gate"].slider.setTooltip("Gate: how much of each step a slice plays (lower is choppier).");
+    m_knobs["resonance"].slider.setTooltip("Resonance: filter resonance.");
+    m_knobs["mix"].slider.setTooltip("Mix: balance between the dry signal and the glitches.");
+    m_knobs["scsensitivity"].slider.setTooltip("SC Trig: how readily a hit on the sidechain input starts a new slice (needs a sidechain routed in).");
+
+    // Resizable (75% to 200%, aspect locked), reopening at the size it was left at
+    ff360_ui::EditorScaling::setup(*this, m_processor.getEditorScale());
     startTimerHz(30);
 }
 
@@ -69,9 +90,11 @@ void CyberpunkGlitchEditor::createKnob(const std::string& id, const juce::String
     k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, k.slider);
     
+    ff360_ui::showValuePopup(k.slider, m_processor.getApvts(), id, this);
+    
     k.label.setText(name, juce::dontSendNotification);
     k.label.setJustificationType(juce::Justification::centred);
-    k.label.setFont(juce::Font(8.5f, juce::Font::plain));
+    k.label.setFont(ff360_ui::brandFont(8.5f, juce::Font::plain));
     k.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
     addAndMakeVisible(k.slider);
@@ -87,14 +110,16 @@ void CyberpunkGlitchEditor::createHFader(const std::string& id, const juce::Stri
     f.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, f.slider);
     
+    ff360_ui::showValuePopup(f.slider, m_processor.getApvts(), id, this);
+    
     f.label.setText(name, juce::dontSendNotification);
     f.label.setJustificationType(juce::Justification::left);
-    f.label.setFont(juce::Font(9.0f, juce::Font::bold));
+    f.label.setFont(ff360_ui::brandFont(9.0f, juce::Font::bold));
     f.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
-    f.valueLabel.setText("-", juce::dontSendNotification);
+    ff360_ui::bindValueLabel(f.slider, f.valueLabel);
     f.valueLabel.setJustificationType(juce::Justification::centredRight);
-    f.valueLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    f.valueLabel.setFont(ff360_ui::brandFont(9.0f, juce::Font::bold));
     f.valueLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
     addAndMakeVisible(f.slider);
@@ -103,7 +128,8 @@ void CyberpunkGlitchEditor::createHFader(const std::string& id, const juce::Stri
 }
 
 void CyberpunkGlitchEditor::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds().toFloat();
+    g.addTransform(ff360_ui::EditorScaling::transformFor(*this)); // draw at the design size
+    auto bounds = ff360_ui::EditorScaling::designBounds().toFloat();
     
     juce::ColourGradient bgGrad(juce::Colour(ff360_ui::Colors::MatteCharcoal), 0, 0,
                                 juce::Colour(0xFF131316), 0, bounds.getHeight(), false);
@@ -113,18 +139,23 @@ void CyberpunkGlitchEditor::paint(juce::Graphics& g) {
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold).withAlpha(0.16f));
     g.drawRect(bounds, 1.0f);
     
-    g.setFont(juce::Font(10.0f, juce::Font::bold));
+    g.setFont(ff360_ui::brandFont(10.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold));
     g.drawText("8 * BEAT-SYNCED GLITCH EFFECTS", 16, 12, bounds.getWidth() - 32, 12, juce::Justification::left);
     
-    g.setFont(juce::Font(12.0f, juce::Font::bold));
+    g.setFont(ff360_ui::brandFont(12.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::TextDim));
     g.drawText("CYBERPUNK GLITCH", 16, 26, bounds.getWidth() - 32, 14, juce::Justification::left);
 }
 
 void CyberpunkGlitchEditor::resized() {
-    auto bounds = getLocalBounds().reduced(16);
+    auto bounds = ff360_ui::EditorScaling::designBounds().reduced(16);
     bounds.removeFromTop(24);
+    bounds.removeFromTop(4);
+    m_workflowBar.setBounds(bounds.removeFromTop(26));
+    bounds.removeFromTop(6);
+    m_outputStrip.setBounds(bounds.removeFromBottom(28));
+    bounds.removeFromBottom(8);
     
     m_mainPanel.setBounds(bounds);
     auto inner = bounds.reduced(14);
@@ -169,6 +200,10 @@ void CyberpunkGlitchEditor::resized() {
         k.slider.setBounds(x, inner.getY(), knobW, knobH);
         k.label.setBounds(x - 10, k.slider.getBottom(), knobW + 20, 14);
     }
+
+    // Laid out at the design size; scale everything to the window
+    ff360_ui::EditorScaling::applyToChildren(*this);
+    m_processor.setEditorScale(ff360_ui::EditorScaling::scaleOf(*this));
 }
 
 #endif

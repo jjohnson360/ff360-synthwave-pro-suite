@@ -50,6 +50,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout NightDriveProcessor::createP
         juce::ParameterID{ "scduck", 1 }, "Sidechain Duck", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 0.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
+    // Output trim, bypass (ff360::FF360_DSP_OutputStage)
+    ff360_ui::output::addParameters(params, false);
+
     return { params.begin(), params.end() };
 }
 
@@ -59,7 +62,8 @@ NightDriveProcessor::NightDriveProcessor()
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)
                      .withInput("Sidechain", juce::AudioChannelSet::stereo(), false)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
-      m_presets(ff360::getNightDrivePresets()) {
+      m_history(*this, {}, { "bypass" }),
+      m_presetManager(m_apvts, m_history, "NightDrive", ff360::getNightDrivePresets(), { "bypass" }) {
     updateScaleNotes(1); // Natural Minor default
 }
 
@@ -94,6 +98,10 @@ void NightDriveProcessor::updateScaleNotes(int scaleIndex) {
 }
 
 void NightDriveProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
+    m_sampleRate = sampleRate;
+    m_granL.assign(static_cast<size_t>(samplesPerBlock), 0.0f);
+    m_granR.assign(static_cast<size_t>(samplesPerBlock), 0.0f);
+    m_outputStage.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_droneChorus.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_granularTexture.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_reverbWash.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
@@ -121,6 +129,9 @@ void NightDriveProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     const int numChannels = buffer.getNumChannels();
 
     if (numChannels == 0 || numSamples == 0) return;
+
+    // Keep the input for bypass and auto gain
+    m_outputStage.captureDry(buffer.getReadPointer(0), buffer.getReadPointer(numChannels > 1 ? 1 : 0), static_cast<size_t>(numSamples));
 
     // Detect ChordFlow MIDI / Chord messages
     for (const auto metadata : midiMessages) {
@@ -184,7 +195,7 @@ void NightDriveProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     float* left = buffer.getWritePointer(0);
     float* right = (numChannels > 1) ? buffer.getWritePointer(1) : buffer.getWritePointer(0);
 
-    const float sr = static_cast<float>(getSampleRate());
+    const float sr = static_cast<float>(m_sampleRate);
     const float invSr = 1.0f / sr;
 
     // Filter LFO frequency ~0.1 Hz
@@ -231,13 +242,17 @@ void NightDriveProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     m_droneChorus.processStereo(left, right, static_cast<size_t>(numSamples));
 
     // 5. Granular texture layer
-    std::vector<float> granL(numSamples, 0.0f);
-    std::vector<float> granR(numSamples, 0.0f);
-    m_granularTexture.processStereo(granL.data(), granR.data(), static_cast<size_t>(numSamples));
+    if (static_cast<size_t>(numSamples) > m_granL.size()) { // bigger block than prepared (rare)
+        m_granL.resize(static_cast<size_t>(numSamples));
+        m_granR.resize(static_cast<size_t>(numSamples));
+    }
+    std::fill_n(m_granL.begin(), numSamples, 0.0f);
+    std::fill_n(m_granR.begin(), numSamples, 0.0f);
+    m_granularTexture.processStereo(m_granL.data(), m_granR.data(), static_cast<size_t>(numSamples));
 
     for (int i = 0; i < numSamples; ++i) {
-        left[i] += granL[i] * granLvl;
-        right[i] += granR[i] * granLvl;
+        left[i] += m_granL[static_cast<size_t>(i)] * granLvl;
+        right[i] += m_granR[static_cast<size_t>(i)] * granLvl;
     }
 
     // 6. Reverb wash send
@@ -268,6 +283,7 @@ void NightDriveProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
         right[i] *= mixVal * duckGain;
     }
 
+    m_outputStage.process(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readSettings(m_apvts));
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
 }
 
@@ -275,30 +291,19 @@ juce::AudioProcessorEditor* NightDriveProcessor::createEditor() {
     return new NightDriveEditor(*this);
 }
 
-int NightDriveProcessor::getNumPrograms() { return static_cast<int>(m_presets.size()); }
-int NightDriveProcessor::getCurrentProgram() { return m_currentPresetIndex; }
-void NightDriveProcessor::setCurrentProgram(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) {
-        m_currentPresetIndex = index;
-        m_paramManager.importFromJson(m_presets[index].jsonContent);
-        for (const auto& desc : m_paramManager.getDescriptors()) {
-            if (auto* p = m_apvts.getParameter(desc.id)) {
-                p->setValueNotifyingHost(m_paramManager.getNormalizedValue(desc.id));
-            }
-        }
-    }
-}
-const juce::String NightDriveProcessor::getProgramName(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) return m_presets[index].name;
-    return {};
-}
-void NightDriveProcessor::changeProgramName(int index, const juce::String& newName) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) m_presets[index].name = newName.toStdString();
-}
+// Presets live in the plugin's own menu (ff360_ui::WorkflowBar); the host sees a single program
+int NightDriveProcessor::getNumPrograms() { return 1; }
+int NightDriveProcessor::getCurrentProgram() { return 0; }
+void NightDriveProcessor::setCurrentProgram(int) {}
+const juce::String NightDriveProcessor::getProgramName(int) { return m_presetManager.getCurrentName(); }
+void NightDriveProcessor::changeProgramName(int, const juce::String&) {}
 
 void NightDriveProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = m_apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
+    m_history.writeState(*xml);
+    m_presetManager.writeState(*xml);
+    xml->setAttribute("uiScale", (double)m_editorScale.load());
     copyXmlToBinary(*xml, destData);
 }
 
@@ -306,6 +311,9 @@ void NightDriveProcessor::setStateInformation(const void* data, int sizeInBytes)
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
     if (xmlState && xmlState->hasTagName(m_apvts.state.getType())) {
         m_apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+        m_history.readState(*xmlState);
+        m_presetManager.readState(*xmlState);
+        m_editorScale.store((float)xmlState->getDoubleAttribute("uiScale", 1.0));
     }
 }
 

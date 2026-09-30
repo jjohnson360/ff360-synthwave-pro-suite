@@ -31,6 +31,8 @@ void FF360_DSP_GlitchEngine::reset() {
     m_samplesUntilNextGrid = 0;
     m_filterL.reset();
     m_filterR.reset();
+    m_cutoffGlide.snap();
+    configureFilter();
     m_stepHistory.fill(false);
     m_stepHistoryPos = 0;
     m_scEnvelope = 0.0f;
@@ -59,9 +61,16 @@ void FF360_DSP_GlitchEngine::setParameters(const GlitchParameters& params) noexc
     // Pitch playback rate factor: 2^(semitones / 12)
     m_playbackRate = std::pow(2.0f, m_params.pitchShiftSemitones / 12.0f);
 
+    // The cutoff glides there in processStereo; resonance applies at the next coefficient update
     const float sr = static_cast<float>(m_sampleRate);
-    m_filterL.configure(BiquadFilter::Type::Lowpass, sr, std::min(sr * 0.48f, m_params.filterCutoffHz), m_params.filterResonance);
-    m_filterR.configure(BiquadFilter::Type::Lowpass, sr, std::min(sr * 0.48f, m_params.filterCutoffHz), m_params.filterResonance);
+    m_cutoffGlide.setTarget(std::min(sr * 0.48f, m_params.filterCutoffHz));
+    configureFilter();
+}
+
+void FF360_DSP_GlitchEngine::configureFilter() noexcept {
+    const float sr = static_cast<float>(m_sampleRate);
+    m_filterL.configure(BiquadFilter::Type::Lowpass, sr, m_cutoffGlide.current, m_params.filterResonance);
+    m_filterR.configure(BiquadFilter::Type::Lowpass, sr, m_cutoffGlide.current, m_params.filterResonance);
 }
 
 void FF360_DSP_GlitchEngine::triggerManualGlitch() {
@@ -121,6 +130,9 @@ void FF360_DSP_GlitchEngine::processStereo(float* left, float* right, size_t num
     const size_t activeGateSamples = static_cast<size_t>(m_sliceLengthSamples * gateFraction);
 
     for (size_t i = 0; i < numSamples; ++i) {
+        if (i % FrequencyGlide::kUpdateInterval == 0 && m_cutoffGlide.advance(static_cast<float>(m_sampleRate)))
+            configureFilter();
+
         const float inL = left[i];
         const float inR = right[i];
 

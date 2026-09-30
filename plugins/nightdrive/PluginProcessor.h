@@ -11,6 +11,8 @@
 
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "ff360_ui/PresetManager.h"
+#include "ff360_ui/OutputStrip.h"
 
 class NightDriveProcessor : public juce::AudioProcessor {
 public:
@@ -41,6 +43,13 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState& getApvts() { return m_apvts; }
+    const ff360::FF360_DSP_OutputStage& getOutputStage() const { return m_outputStage; }
+    juce::AudioProcessorParameter* getBypassParameter() const override { return m_apvts.getParameter(ff360_ui::output::bypassId); }
+    ff360_ui::EditHistory& getHistory() { return m_history; }
+    ff360_ui::PresetManager& getPresetManager() { return m_presetManager; }
+    // Editor size as a scale of its design size (ff360_ui::EditorScaling), saved with the session
+    float getEditorScale() const { return m_editorScale.load(); }
+    void setEditorScale(float s) { m_editorScale.store(s); }
     ff360::FF360_DSP_MeteringBridge& getMeteringBridge() { return m_meteringBridge; }
     bool isChordFlowActive() const noexcept { return m_chordFlowDetected; }
 
@@ -56,6 +65,7 @@ private:
     ff360::FF360_DSP_MacroSystem m_evolveMacro;
     ff360::FF360_DSP_ParameterManager m_paramManager;
     ff360::FF360_DSP_MeteringBridge m_meteringBridge;
+    ff360::FF360_DSP_OutputStage m_outputStage; // auto gain, output trim, bypass
 
     // Filter sweep LFO
     float m_filterLfoPhase = 0.0f;
@@ -75,8 +85,15 @@ private:
     // NightDrive generates its own signal, so there's no "self" key to fall back to)
     float m_scDuckEnvelope = 0.0f;
 
-    std::vector<ff360::Preset> m_presets;
-    int m_currentPresetIndex = 0;
+    // Set in prepareToPlay, so processBlock never allocates or asks the host for the rate
+    double m_sampleRate = 44100.0;
+    std::vector<float> m_granL, m_granR;
+
+    // Undo/redo, A/B and the preset menu. Owned here (not by the editor) so they survive
+    // closing the plugin window; declared after m_apvts, which they use.
+    ff360_ui::EditHistory m_history;
+    ff360_ui::PresetManager m_presetManager;
+    std::atomic<float> m_editorScale { 1.0f };
 
     void updateScaleNotes(int scaleIndex);
 

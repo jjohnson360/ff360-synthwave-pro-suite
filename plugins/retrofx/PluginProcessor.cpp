@@ -39,6 +39,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout RetroFXProcessor::createPara
         juce::ParameterID{ "mix", 1 }, "Mix", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
+    // Oversampling around the engine (ff360_ui::Oversampler)
+    ff360_ui::Oversampler::addParameter(params); // Off / 2x (default) / 4x
+
+    // Output trim, bypass (ff360::FF360_DSP_OutputStage)
+    ff360_ui::output::addParameters(params, false);
+
     return { params.begin(), params.end() };
 }
 
@@ -47,7 +53,8 @@ RetroFXProcessor::RetroFXProcessor()
                      .withInput("Input", juce::AudioChannelSet::stereo(), true)
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
-      m_presets(ff360::getRetroFXPresets()) {
+      m_history(*this, {}, { "bypass", "oversampling" }),
+      m_presetManager(m_apvts, m_history, "RetroFX", ff360::getRetroFXPresets(), { "bypass", "oversampling" }) {
     setupGenerators();
 }
 
@@ -64,9 +71,33 @@ void RetroFXProcessor::setupGenerators() {
 }
 
 void RetroFXProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
-    m_genEngine.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
+    m_baseRate = sampleRate;
+    m_maxBlock = samplesPerBlock;
+    m_outputStage.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_meteringBridge.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_paramManager.prepare(sampleRate);
+    m_oversampler.prepare(2, samplesPerBlock);
+    applyOversampling(ff360_ui::Oversampler::readOrder(m_apvts));
+}
+
+void RetroFXProcessor::applyOversampling(int order) {
+    m_oversampler.setOrder(order);
+    const double rate = m_baseRate * m_oversampler.getFactor();
+    const size_t block = static_cast<size_t>(m_maxBlock * m_oversampler.getFactor());
+    m_genEngine.prepare(rate, block);
+    m_selectedGenerator = -1; // re-select at the new rate
+
+    // The host compensates this; the dry path (bypass, auto gain) is delayed to match
+    const int latency = m_oversampler.getLatencySamples();
+    m_outputStage.setDryDelay(static_cast<size_t>(latency));
+    setLatencySamples(latency);
+}
+
+void RetroFXProcessor::handleAsyncUpdate() {
+    // The Oversampling setting changed: re-prepare with the audio thread held off
+    suspendProcessing(true);
+    applyOversampling(ff360_ui::Oversampler::readOrder(m_apvts));
+    suspendProcessing(false);
 }
 
 void RetroFXProcessor::releaseResources() {
@@ -86,11 +117,18 @@ void RetroFXProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
 
     if (numChannels == 0 || numSamples == 0) return;
 
-    // Check MIDI triggers
+    // Oversampling setting changed: switch on the message thread (it re-prepares the engine)
+    if (ff360_ui::Oversampler::readOrder(m_apvts) != m_oversampler.getOrder())
+        triggerAsyncUpdate();
+
+    // Keep the input for bypass and auto gain
+    m_outputStage.captureDry(buffer.getReadPointer(0), buffer.getReadPointer(numChannels > 1 ? 1 : 0), static_cast<size_t>(numSamples));
+
+    // GENERATE FX button or a MIDI note; fired below, once this block's settings are applied
+    bool generate = m_generateRequested.exchange(false);
     for (const auto metadata : midiMessages) {
-        const auto msg = metadata.getMessage();
-        if (msg.isNoteOn()) {
-            triggerGenerate();
+        if (metadata.getMessage().isNoteOn()) {
+            generate = true;
         }
     }
 
@@ -105,7 +143,11 @@ void RetroFXProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     }
 
     const int genId = static_cast<int>(m_apvts.getRawParameterValue("generator")->load());
-    m_genEngine.selectGenerator(genId);
+    // Only on a change: selecting resets the generator's oscillator and filters, which clicks
+    if (genId != m_selectedGenerator) {
+        m_genEngine.selectGenerator(genId);
+        m_selectedGenerator = genId;
+    }
 
     ff360::GenerativeParameters p;
     p.syncMode = static_cast<ff360::GenerativeSyncMode>(static_cast<int>(m_apvts.getRawParameterValue("sync")->load()));
@@ -119,10 +161,16 @@ void RetroFXProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
 
     m_genEngine.setParameters(p);
 
+    if (generate)
+        triggerGenerate();
+
     float* left = buffer.getWritePointer(0);
     float* right = (numChannels > 1) ? buffer.getWritePointer(1) : buffer.getWritePointer(0);
 
-    m_genEngine.processStereo(left, right, static_cast<size_t>(numSamples));
+    m_oversampler.process(buffer, std::min(2, numChannels), [this](float* l, float* r, size_t n) {
+        m_genEngine.processStereo(l, r, n);
+    });
+    m_outputStage.process(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readSettings(m_apvts));
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
 }
 
@@ -130,30 +178,19 @@ juce::AudioProcessorEditor* RetroFXProcessor::createEditor() {
     return new RetroFXEditor(*this);
 }
 
-int RetroFXProcessor::getNumPrograms() { return static_cast<int>(m_presets.size()); }
-int RetroFXProcessor::getCurrentProgram() { return m_currentPresetIndex; }
-void RetroFXProcessor::setCurrentProgram(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) {
-        m_currentPresetIndex = index;
-        m_paramManager.importFromJson(m_presets[index].jsonContent);
-        for (const auto& desc : m_paramManager.getDescriptors()) {
-            if (auto* p = m_apvts.getParameter(desc.id)) {
-                p->setValueNotifyingHost(m_paramManager.getNormalizedValue(desc.id));
-            }
-        }
-    }
-}
-const juce::String RetroFXProcessor::getProgramName(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) return m_presets[index].name;
-    return {};
-}
-void RetroFXProcessor::changeProgramName(int index, const juce::String& newName) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) m_presets[index].name = newName.toStdString();
-}
+// Presets live in the plugin's own menu (ff360_ui::WorkflowBar); the host sees a single program
+int RetroFXProcessor::getNumPrograms() { return 1; }
+int RetroFXProcessor::getCurrentProgram() { return 0; }
+void RetroFXProcessor::setCurrentProgram(int) {}
+const juce::String RetroFXProcessor::getProgramName(int) { return m_presetManager.getCurrentName(); }
+void RetroFXProcessor::changeProgramName(int, const juce::String&) {}
 
 void RetroFXProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = m_apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
+    m_history.writeState(*xml);
+    m_presetManager.writeState(*xml);
+    xml->setAttribute("uiScale", (double)m_editorScale.load());
     copyXmlToBinary(*xml, destData);
 }
 
@@ -161,6 +198,9 @@ void RetroFXProcessor::setStateInformation(const void* data, int sizeInBytes) {
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
     if (xmlState && xmlState->hasTagName(m_apvts.state.getType())) {
         m_apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+        m_history.readState(*xmlState);
+        m_presetManager.readState(*xmlState);
+        m_editorScale.store((float)xmlState->getDoubleAttribute("uiScale", 1.0));
     }
 }
 

@@ -25,3 +25,9 @@ cmake --build . --config Release
 
 ## UI and Design System
 All interfaces use the `ff360_ui_core` design system, featuring procedural vector graphics, neon glow effects, and a unified aesthetic tailored for 80s retro-futurism.
+
+Editors are resizable from 75% to 200% (aspect ratio locked); each plugin remembers its size with the session.
+
+## Credits & Licenses
+- **Typography:** Barlow Condensed (Regular, SemiBold), designed by Jeremy Tribby, licensed under the [SIL Open Font License 1.1](ff360_ui_core/fonts/BarlowCondensed-OFL.txt). Embedded in each plugin.
+- **Audio framework:** [JUCE](https://juce.com/).
