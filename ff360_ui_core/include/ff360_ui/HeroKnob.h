@@ -31,6 +31,8 @@ public:
     // Edit gesture around a drag or wheel step, for host automation recording and undo
     std::function<void()> onDragStart;
     std::function<void()> onDragEnd;
+    // Double-click: back to the parameter's default (like every other knob)
+    std::function<void()> onResetToDefault;
 
     void paint(juce::Graphics& g) override {
         const auto bounds = getLocalBounds().toFloat();
@@ -94,6 +96,10 @@ public:
 
     void mouseUp(const juce::MouseEvent&) override {
         if (onDragEnd) onDragEnd();
+    }
+
+    void mouseDoubleClick(const juce::MouseEvent&) override {
+        if (onResetToDefault) onResetToDefault();
     }
 
     void mouseDrag(const juce::MouseEvent& e) override {

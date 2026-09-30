@@ -22,6 +22,26 @@ public:
     }
 
     juce::Font getPopupMenuFont() override { return brandFont(14.0f); }
+
+    // Tooltips in the brand face at a readable size (JUCE's own are fixed at 13 px)
+    juce::Rectangle<int> getTooltipBounds(const juce::String& tipText, juce::Point<int> screenPos,
+                                          juce::Rectangle<int> parentArea) override {
+        const auto layout = layoutTooltip(tipText);
+        const int w = (int)std::ceil(layout.getWidth()) + 16;
+        const int h = (int)std::ceil(layout.getHeight()) + 10;
+        return juce::Rectangle<int>(screenPos.x > parentArea.getCentreX() ? screenPos.x - (w + 12) : screenPos.x + 24,
+                                    screenPos.y > parentArea.getCentreY() ? screenPos.y - (h + 6) : screenPos.y + 6,
+                                    w, h).constrainedWithin(parentArea);
+    }
+
+    void drawTooltip(juce::Graphics& g, const juce::String& text, int width, int height) override {
+        const auto bounds = juce::Rectangle<float>(0.0f, 0.0f, (float)width, (float)height);
+        g.setColour(findColour(juce::TooltipWindow::backgroundColourId));
+        g.fillRoundedRectangle(bounds, 5.0f);
+        g.setColour(findColour(juce::TooltipWindow::outlineColourId));
+        g.drawRoundedRectangle(bounds.reduced(0.5f), 5.0f, 1.0f);
+        layoutTooltip(text).draw(g, bounds.reduced(8.0f, 5.0f));
+    }
     juce::Font getComboBoxFont(juce::ComboBox& box) override {
         return brandFont(juce::jmin(15.0f, (float)box.getHeight() * 0.7f));
     }
@@ -226,6 +246,15 @@ public:
     }
 
 private:
+    juce::TextLayout layoutTooltip(const juce::String& text) {
+        juce::AttributedString s;
+        s.setJustification(juce::Justification::centredLeft);
+        s.append(text, brandFont(12.0f), findColour(juce::TooltipWindow::textColourId));
+        juce::TextLayout layout;
+        layout.createLayoutWithBalancedLineLengths(s, 260.0f);
+        return layout;
+    }
+
     // Members, not statics: a static typeface in a plugin can outlive JUCE when the host unloads it
     juce::Typeface::Ptr m_regular = juce::Typeface::createSystemTypefaceFor(
         ff360_fonts::BarlowCondensedRegular_ttf, (size_t)ff360_fonts::BarlowCondensedRegular_ttfSize);

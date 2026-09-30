@@ -42,6 +42,12 @@ private:
     juce::TextButton m_vintageButton;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> m_vintageAttach;
 
+    // Tempo sync: while on, the RATE knob picks a note length ("syncdiv") instead of Hz ("rate")
+    juce::TextButton m_syncButton;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> m_syncAttach;
+    std::unique_ptr<juce::ParameterAttachment> m_syncWatch; // follows presets, undo, automation
+    void bindRateKnob(bool synced);
+
     // Dots for cosmetic UI chrome
     struct DotIndicator : public juce::Component {
         void paint(juce::Graphics& g) override {

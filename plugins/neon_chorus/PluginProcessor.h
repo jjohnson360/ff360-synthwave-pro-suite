@@ -50,6 +50,10 @@ public:
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
+    // Tempo sync: the "syncdiv" note lengths, and the LFO rate one of them gives at a tempo
+    static juce::StringArray syncDivisionNames() { return { "4 Bars", "2 Bars", "1 Bar", "1/2", "1/4", "1/8", "1/16" }; }
+    static float syncedRateHz(int divisionIndex, double bpm);
+
 private:
     juce::AudioProcessorValueTreeState m_apvts;
     ff360::FF360_DSP_ModulationEngine m_chorusEngine;

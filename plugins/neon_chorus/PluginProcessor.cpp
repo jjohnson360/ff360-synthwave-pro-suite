@@ -43,6 +43,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout NeonChorusProcessor::createP
     params.push_back(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID{ "quad", 1 }, "Quad Chorus (4-Voice)", true));
 
+    // Tempo sync: the LFO runs one cycle per note length at the host tempo (RATE is ignored)
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ "sync", 1 }, "Tempo Sync", false));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID{ "syncdiv", 1 }, "Sync Rate", syncDivisionNames(), 3)); // 1/2
+
     // Output trim, auto gain and bypass (ff360::FF360_DSP_OutputStage)
     ff360_ui::output::addParameters(params, true);
     ff360_ui::output::addDeltaParameter(params); // hear only what the effect adds
@@ -84,6 +90,13 @@ void NeonChorusProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
 
     ff360::ModulationParameters params;
     params.rateHz = m_apvts.getRawParameterValue("rate")->load();
+    if (m_apvts.getRawParameterValue("sync")->load() > 0.5f) {
+        double bpm = 120.0;
+        if (auto* playHead = getPlayHead())
+            if (auto pos = playHead->getPosition())
+                if (pos->getBpm().hasValue()) bpm = *pos->getBpm();
+        params.rateHz = syncedRateHz(static_cast<int>(m_apvts.getRawParameterValue("syncdiv")->load()), bpm);
+    }
     params.depth = m_apvts.getRawParameterValue("depth")->load() * 0.01f;
     params.width = m_apvts.getRawParameterValue("width")->load() * 0.01f;
     params.detune = m_apvts.getRawParameterValue("detune")->load() * 0.01f;
@@ -107,6 +120,12 @@ void NeonChorusProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     m_deltaTap.apply(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readDelta(m_apvts), 1.0f - params.mix);
     m_outputStage.process(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readSettings(m_apvts));
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
+}
+
+float NeonChorusProcessor::syncedRateHz(int divisionIndex, double bpm) {
+    static constexpr double beatsPerCycle[] = { 16.0, 8.0, 4.0, 2.0, 1.0, 0.5, 0.25 };
+    const double beats = beatsPerCycle[juce::jlimit(0, 6, divisionIndex)];
+    return static_cast<float>((juce::jlimit(20.0, 999.0, bpm) / 60.0) / beats);
 }
 
 juce::AudioProcessorEditor* NeonChorusProcessor::createEditor() {

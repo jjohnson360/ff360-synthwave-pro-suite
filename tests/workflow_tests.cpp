@@ -715,6 +715,71 @@ void testStress() {
     stressPlugin<NightDriveProcessor>("NightDrive");
 }
 
+
+// Double-click reset on the DEGRADE knob, Neon Chorus tempo sync, tooltip size
+void testPolish() {
+    std::cout << "Polish\n";
+    {
+        currentPlugin = "VHS";
+        VHSPluginProcessor proc;
+        std::unique_ptr<juce::AudioProcessorEditor> editor(proc.createEditor());
+        auto* degrade = proc.getApvts().getParameter("degrade");
+        edit(*degrade, 0.7f);
+        ff360_ui::FF360_HeroKnob* knob = nullptr;
+        for (auto* c : editor->getChildren())
+            if (auto* k = dynamic_cast<ff360_ui::FF360_HeroKnob*>(c)) knob = k;
+        check(knob != nullptr && knob->onResetToDefault != nullptr, "DEGRADE has double-click reset");
+        if (knob != nullptr && knob->onResetToDefault) knob->onResetToDefault();
+        check(near(degrade->getValue(), degrade->getDefaultValue()), "double-click puts DEGRADE back to its default");
+    }
+    {
+        currentPlugin = "Neon Chorus sync";
+        check(std::abs(NeonChorusProcessor::syncedRateHz(4, 120.0) - 2.0f) < 1.0e-5f, "1/4 at 120 BPM is 2 Hz");
+        check(std::abs(NeonChorusProcessor::syncedRateHz(2, 120.0) - 0.5f) < 1.0e-5f, "1 bar at 120 BPM is 0.5 Hz");
+        check(std::abs(NeonChorusProcessor::syncedRateHz(6, 90.0) - 6.0f) < 1.0e-5f, "1/16 at 90 BPM is 6 Hz");
+
+        NeonChorusProcessor proc;
+        std::unique_ptr<juce::AudioProcessorEditor> editor(proc.createEditor());
+        auto findRate = [&]() -> std::pair<juce::Slider*, juce::Label*> {
+            std::vector<juce::Component*> all;
+            std::function<void(juce::Component&)> walk = [&](juce::Component& c) { for (auto* ch : c.getChildren()) { all.push_back(ch); walk(*ch); } };
+            walk(*editor);
+            juce::Label* label = nullptr;
+            for (auto* c : all) if (auto* l = dynamic_cast<juce::Label*>(c); l && l->getText().startsWith("RATE")) label = l;
+            juce::Slider* best = nullptr;
+            for (auto* c : all)
+                if (auto* sl = dynamic_cast<juce::Slider*>(c); sl && label && sl->getBottom() == label->getY() && sl->getX() == label->getX() + 10) best = sl; // label sits under its knob
+            return { best, label };
+        };
+        auto [rateOff, labelOff] = findRate();
+        check(rateOff != nullptr && labelOff != nullptr && labelOff->getText() == "RATE", "RATE knob found (sync off)");
+        if (rateOff) check(std::abs(rateOff->getMaximum() - 8.0) < 1.0e-6, "sync off: RATE is in Hz (up to 8)");
+
+        edit(*proc.getApvts().getParameter("sync"), 1.0f); // as a preset, undo or automation would
+        auto [rateOn, labelOn] = findRate();
+        check(labelOn != nullptr && labelOn->getText() == "RATE (SYNC)", "sync on: the label says so");
+        if (rateOn) {
+            check(std::abs(rateOn->getMaximum() - 6.0) < 1.0e-6, "sync on: RATE picks a note length");
+            check(rateOn->getTextFromValue(rateOn->getValue()) == "1/2", "sync on: default note length is 1/2 (got "
+                  + rateOn->getTextFromValue(rateOn->getValue()) + ")");
+            check(rateOn->getTooltip().contains("tempo"), "sync on: the tooltip explains it");
+        }
+        edit(*proc.getApvts().getParameter("sync"), 0.0f);
+        auto [rateBack, labelBack] = findRate();
+        check(labelBack != nullptr && labelBack->getText() == "RATE" && rateBack && std::abs(rateBack->getMaximum() - 8.0) < 1.0e-6,
+              "sync off again: back to Hz");
+    }
+    {
+        currentPlugin = "tooltips";
+        ff360_ui::FF360_LookAndFeel lnf;
+        const auto r = lnf.getTooltipBounds("Rate: speed of the chorus sweep.", { 100, 100 }, { 0, 0, 1000, 1000 });
+        check(r.getHeight() >= 22 && r.getWidth() > 100, "tooltips use the larger brand-font layout ("
+              + juce::String(r.getWidth()) + " x " + juce::String(r.getHeight()) + ")");
+        const auto longTip = lnf.getTooltipBounds(juce::String::repeatedString("word ", 60), { 100, 100 }, { 0, 0, 1000, 1000 });
+        check(longTip.getWidth() <= 300, "long tooltips wrap instead of running off screen");
+    }
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -731,6 +796,7 @@ int main(int argc, char* argv[]) {
     testDelta();
     testScalingAndFonts(snapshotDir);
     testStress();
+    testPolish();
     testPlugin<VHSPluginProcessor>("VHS", ff360::getVhsPresets(), snapshotDir);
     testPlugin<NeonChorusProcessor>("Neon Chorus", ff360::getNeonChorusPresets(), snapshotDir);
     testPlugin<MidnightReverbProcessor>("Midnight Reverb", ff360::getMidnightReverbPresets(), snapshotDir);

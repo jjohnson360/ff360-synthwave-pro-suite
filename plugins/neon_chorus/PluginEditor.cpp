@@ -42,13 +42,23 @@ NeonChorusEditor::NeonChorusEditor(NeonChorusProcessor& p)
         m_processor.getApvts(), "vintage", m_vintageButton);
     addAndMakeVisible(m_vintageButton);
 
+    m_syncButton.setButtonText("Sync");
+    m_syncButton.setClickingTogglesState(true);
+    m_syncAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        m_processor.getApvts(), "sync", m_syncButton);
+    addAndMakeVisible(m_syncButton);
+    if (auto* sync = m_processor.getApvts().getParameter("sync")) {
+        m_syncWatch = std::make_unique<juce::ParameterAttachment>(*sync, [this](float v) { bindRateKnob(v > 0.5f); });
+        m_syncWatch->sendInitialUpdate();
+    }
+
     addAndMakeVisible(m_d1);
     addAndMakeVisible(m_d2);
     addAndMakeVisible(m_d3);
 
 
     // Tooltips: every control explains itself on hover (the editor test fails on any without one)
-    m_knobs["rate"].slider.setTooltip("Rate: speed of the chorus sweep.");
+    // RATE's tooltip is set by bindRateKnob (it depends on Sync)
     m_knobs["depth"].slider.setTooltip("Depth: how far the voices sweep.");
     m_knobs["detune"].slider.setTooltip("Detune: pitch spread between the voices.");
     m_knobs["feedback"].slider.setTooltip("Feedback: feeds the chorus back into itself for a more metallic, flanger-like sound.");
@@ -58,6 +68,7 @@ NeonChorusEditor::NeonChorusEditor(NeonChorusProcessor& p)
     m_knobs["bassmono"].slider.setTooltip("Bass Mono: keeps everything below this frequency in mono (0 = off).");
     m_quadButton.setTooltip("Quad Chorus: 4 voices instead of 2.");
     m_vintageButton.setTooltip("Vintage: vintage chorus character. Off gives a cleaner, modern chorus.");
+    m_syncButton.setTooltip("Sync: locks the chorus sweep to the host tempo. RATE then picks a note length.");
 
     // Resizable (75% to 200%, aspect locked), reopening at the size it was left at
     ff360_ui::EditorScaling::setup(*this, m_processor.getEditorScale());
@@ -65,6 +76,17 @@ NeonChorusEditor::NeonChorusEditor(NeonChorusProcessor& p)
 
 NeonChorusEditor::~NeonChorusEditor() {
     setLookAndFeel(nullptr);
+}
+
+void NeonChorusEditor::bindRateKnob(bool synced) {
+    auto& k = m_knobs["rate"];
+    const juce::String id = synced ? "syncdiv" : "rate";
+    k.attachment.reset(); // detach before re-attaching to the other parameter
+    k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(m_processor.getApvts(), id, k.slider);
+    ff360_ui::showValuePopup(k.slider, m_processor.getApvts(), id, this);
+    k.label.setText(synced ? "RATE (SYNC)" : "RATE", juce::dontSendNotification);
+    k.slider.setTooltip(synced ? "Rate: one sweep per note length, at the host tempo."
+                               : "Rate: speed of the chorus sweep.");
 }
 
 void NeonChorusEditor::createKnob(const std::string& id, const juce::String& name, bool useAmberAccent) {
@@ -162,10 +184,12 @@ void NeonChorusEditor::resized() {
     // Quad Chorus + Vintage/Modern buttons, side by side
     auto btnArea = inner.removeFromTop(36);
     int btnGap = 8;
-    int btnW = (btnArea.getWidth() - btnGap) / 2;
+    int btnW = (btnArea.getWidth() - 2 * btnGap) / 3;
     m_quadButton.setBounds(btnArea.removeFromLeft(btnW));
     btnArea.removeFromLeft(btnGap);
-    m_vintageButton.setBounds(btnArea);
+    m_vintageButton.setBounds(btnArea.removeFromLeft(btnW));
+    btnArea.removeFromLeft(btnGap);
+    m_syncButton.setBounds(btnArea);
     
     inner.removeFromTop(16);
     

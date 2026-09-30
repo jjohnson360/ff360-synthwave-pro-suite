@@ -30,6 +30,9 @@ VHSPluginEditor::VHSPluginEditor(VHSPluginProcessor& p)
         m_degradeKnob->onDragStart = [this] { m_degradeAttach->beginGesture(); };
         m_degradeKnob->onDragEnd = [this] { m_degradeAttach->endGesture(); };
         m_degradeKnob->onValueChanged = [this](float val) { m_degradeAttach->setValueAsPartOfGesture(val * 100.0f); };
+        m_degradeKnob->onResetToDefault = [this, param] {
+            m_degradeAttach->setValueAsCompleteGesture(param->convertFrom0to1(param->getDefaultValue()));
+        };
         m_degradeAttach->sendInitialUpdate();
     }
     addAndMakeVisible(m_degradeKnob.get());
@@ -87,7 +90,7 @@ VHSPluginEditor::VHSPluginEditor(VHSPluginProcessor& p)
 
 
     // Tooltips: every control explains itself on hover (the editor test fails on any without one)
-    m_degradeKnob->setTooltip("DEGRADE: one-knob tape wear. Raises all the tape effects together.");
+    m_degradeKnob->setTooltip("DEGRADE: one-knob tape wear. Raises all the tape effects together. Double-click to reset.");
     m_knobs["wow"].slider.setTooltip("Wow: slow, wide pitch wobble.");
     m_knobs["flutter"].slider.setTooltip("Flutter: fast, fine pitch wobble.");
     m_knobs["noise"].slider.setTooltip("Noise: background tape noise.");
