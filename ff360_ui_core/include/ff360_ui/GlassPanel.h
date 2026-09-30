@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DesignTokens.h"
+#include "Fonts.h"
 
 #if __has_include(<juce_gui_basics/juce_gui_basics.h>)
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -32,7 +33,7 @@ public:
         // Header Title if specified
         if (m_title.isNotEmpty()) {
             g.setColour(juce::Colour(Colors::MetallicGold));
-            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.setFont(ff360_ui::brandFont(10.0f, juce::Font::bold));
             g.drawText(m_title.toUpperCase(), 12, 8, static_cast<int>(bounds.getWidth() - 24), 14, juce::Justification::left);
         }
     }

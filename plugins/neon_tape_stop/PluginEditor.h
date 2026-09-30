@@ -5,6 +5,7 @@
 #include "ff360_ui/LookAndFeel.h"
 #include "ff360_ui/WorkflowBar.h"
 #include "ff360_ui/ControlHelpers.h"
+#include "ff360_ui/EditorScaling.h"
 #include "ff360_ui/OutputStrip.h"
 #include "ff360_ui/GlassPanel.h"
 #include "ff360_ui/Scenes.h"

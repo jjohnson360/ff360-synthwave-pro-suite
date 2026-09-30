@@ -296,6 +296,7 @@ void NightDriveProcessor::getStateInformation(juce::MemoryBlock& destData) {
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
     m_history.writeState(*xml);
     m_presetManager.writeState(*xml);
+    xml->setAttribute("uiScale", (double)m_editorScale.load());
     copyXmlToBinary(*xml, destData);
 }
 
@@ -305,6 +306,7 @@ void NightDriveProcessor::setStateInformation(const void* data, int sizeInBytes)
         m_apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
         m_history.readState(*xmlState);
         m_presetManager.readState(*xmlState);
+        m_editorScale.store((float)xmlState->getDoubleAttribute("uiScale", 1.0));
     }
 }
 

@@ -34,11 +34,11 @@ NightDriveEditor::NightDriveEditor(NightDriveProcessor& p)
     ff360_ui::showValuePopup(m_evolveSlider, m_processor.getApvts(), "evolve", this);
     
     m_evolveLabel.setText("EVOLUTION", juce::dontSendNotification);
-    m_evolveLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    m_evolveLabel.setFont(ff360_ui::brandFont(9.0f, juce::Font::bold));
     m_evolveLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
     ff360_ui::bindValueLabel(m_evolveSlider, m_evolveValueLabel);
-    m_evolveValueLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    m_evolveValueLabel.setFont(ff360_ui::brandFont(9.0f, juce::Font::bold));
     m_evolveValueLabel.setJustificationType(juce::Justification::centredRight);
     
     addAndMakeVisible(m_evolveSlider);
@@ -54,11 +54,11 @@ NightDriveEditor::NightDriveEditor(NightDriveProcessor& p)
     ff360_ui::showValuePopup(m_mixSlider, m_processor.getApvts(), "mix", this);
     
     m_mixLabel.setText("MIX", juce::dontSendNotification);
-    m_mixLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    m_mixLabel.setFont(ff360_ui::brandFont(9.0f, juce::Font::bold));
     m_mixLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
     ff360_ui::bindValueLabel(m_mixSlider, m_mixValueLabel);
-    m_mixValueLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    m_mixValueLabel.setFont(ff360_ui::brandFont(9.0f, juce::Font::bold));
     m_mixValueLabel.setJustificationType(juce::Justification::centredRight);
     
     addAndMakeVisible(m_mixSlider);
@@ -74,11 +74,11 @@ NightDriveEditor::NightDriveEditor(NightDriveProcessor& p)
     ff360_ui::showValuePopup(m_scDuckSlider, m_processor.getApvts(), "scduck", this);
 
     m_scDuckLabel.setText("SC DUCK", juce::dontSendNotification);
-    m_scDuckLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    m_scDuckLabel.setFont(ff360_ui::brandFont(9.0f, juce::Font::bold));
     m_scDuckLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
 
     ff360_ui::bindValueLabel(m_scDuckSlider, m_scDuckValueLabel);
-    m_scDuckValueLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    m_scDuckValueLabel.setFont(ff360_ui::brandFont(9.0f, juce::Font::bold));
     m_scDuckValueLabel.setJustificationType(juce::Justification::centredRight);
 
     addAndMakeVisible(m_scDuckSlider);
@@ -112,7 +112,8 @@ NightDriveEditor::NightDriveEditor(NightDriveProcessor& p)
     m_mixSlider.setTooltip("Mix: level of the generated atmosphere.");
     m_scDuckSlider.setTooltip("SC Duck: pulls the atmosphere down while the sidechain input plays (needs a sidechain routed in).");
 
-    setSize(350, 712);
+    // Resizable (75% to 200%, aspect locked), reopening at the size it was left at
+    ff360_ui::EditorScaling::setup(*this, m_processor.getEditorScale());
 }
 
 NightDriveEditor::~NightDriveEditor() {
@@ -130,7 +131,7 @@ void NightDriveEditor::createFader(const std::string& id, const juce::String& na
     
     f.label.setText(name, juce::dontSendNotification);
     f.label.setJustificationType(juce::Justification::centred);
-    f.label.setFont(juce::Font(8.0f, juce::Font::bold));
+    f.label.setFont(ff360_ui::brandFont(8.0f, juce::Font::bold));
     f.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
     addAndMakeVisible(f.slider);
@@ -138,7 +139,8 @@ void NightDriveEditor::createFader(const std::string& id, const juce::String& na
 }
 
 void NightDriveEditor::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds().toFloat();
+    g.addTransform(ff360_ui::EditorScaling::transformFor(*this)); // draw at the design size
+    auto bounds = ff360_ui::EditorScaling::designBounds().toFloat();
     
     // Background gradient
     juce::ColourGradient bgGrad(juce::Colour(ff360_ui::Colors::MatteCharcoal), 0, 0,
@@ -151,17 +153,17 @@ void NightDriveEditor::paint(juce::Graphics& g) {
     g.drawRect(bounds, 1.0f);
     
     // Eyebrow and Title
-    g.setFont(juce::Font(10.0f, juce::Font::bold));
+    g.setFont(ff360_ui::brandFont(10.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold));
     g.drawText("6 * GENERATIVE ATMOSPHERE", 16, 12, bounds.getWidth() - 32, 12, juce::Justification::left);
     
-    g.setFont(juce::Font(12.0f, juce::Font::bold));
+    g.setFont(ff360_ui::brandFont(12.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::TextDim));
     g.drawText("NIGHTDRIVE", 16, 26, bounds.getWidth() - 32, 14, juce::Justification::left);
 }
 
 void NightDriveEditor::resized() {
-    auto bounds = getLocalBounds().reduced(16);
+    auto bounds = ff360_ui::EditorScaling::designBounds().reduced(16);
     bounds.removeFromTop(24);
     bounds.removeFromTop(4);
     m_workflowBar.setBounds(bounds.removeFromTop(26));
@@ -217,6 +219,10 @@ void NightDriveEditor::resized() {
     m_scDuckLabel.setBounds(scRow.getX(), scRow.getY(), 60, 12);
     m_scDuckValueLabel.setBounds(scRow.getRight() - 50, scRow.getY(), 50, 12);
     m_scDuckSlider.setBounds(scRow.getX(), scRow.getY() + 14, scRow.getWidth(), 6);
+
+    // Laid out at the design size; scale everything to the window
+    ff360_ui::EditorScaling::applyToChildren(*this);
+    m_processor.setEditorScale(ff360_ui::EditorScaling::scaleOf(*this));
 }
 
 #endif

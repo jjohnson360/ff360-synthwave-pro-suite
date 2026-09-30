@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DesignTokens.h"
+#include "Fonts.h"
 
 #if __has_include(<juce_gui_basics/juce_gui_basics.h>)
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -100,7 +101,7 @@ public:
 
         // Scale labels
         g.setColour(juce::Colour(Colors::TextDim));
-        g.setFont(juce::Font(8.5f, juce::Font::plain));
+        g.setFont(ff360_ui::brandFont(8.5f, juce::Font::plain));
         g.drawText("-1", corrBounds.getX() + 2.0f, corrBounds.getY(), 14.0f, corrH, juce::Justification::left);
         g.drawText("0", cMidX - 6.0f, corrBounds.getY(), 12.0f, corrH, juce::Justification::centred);
         g.drawText("+1", corrBounds.getRight() - 16.0f, corrBounds.getY(), 14.0f, corrH, juce::Justification::right);

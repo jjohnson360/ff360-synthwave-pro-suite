@@ -59,7 +59,8 @@ CyberpunkGlitchEditor::CyberpunkGlitchEditor(CyberpunkGlitchProcessor& p)
     m_knobs["mix"].slider.setTooltip("Mix: balance between the dry signal and the glitches.");
     m_knobs["scsensitivity"].slider.setTooltip("SC Trig: how readily a hit on the sidechain input starts a new slice (needs a sidechain routed in).");
 
-    setSize(350, 712);
+    // Resizable (75% to 200%, aspect locked), reopening at the size it was left at
+    ff360_ui::EditorScaling::setup(*this, m_processor.getEditorScale());
     startTimerHz(30);
 }
 
@@ -93,7 +94,7 @@ void CyberpunkGlitchEditor::createKnob(const std::string& id, const juce::String
     
     k.label.setText(name, juce::dontSendNotification);
     k.label.setJustificationType(juce::Justification::centred);
-    k.label.setFont(juce::Font(8.5f, juce::Font::plain));
+    k.label.setFont(ff360_ui::brandFont(8.5f, juce::Font::plain));
     k.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
     addAndMakeVisible(k.slider);
@@ -113,12 +114,12 @@ void CyberpunkGlitchEditor::createHFader(const std::string& id, const juce::Stri
     
     f.label.setText(name, juce::dontSendNotification);
     f.label.setJustificationType(juce::Justification::left);
-    f.label.setFont(juce::Font(9.0f, juce::Font::bold));
+    f.label.setFont(ff360_ui::brandFont(9.0f, juce::Font::bold));
     f.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
     ff360_ui::bindValueLabel(f.slider, f.valueLabel);
     f.valueLabel.setJustificationType(juce::Justification::centredRight);
-    f.valueLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    f.valueLabel.setFont(ff360_ui::brandFont(9.0f, juce::Font::bold));
     f.valueLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
     addAndMakeVisible(f.slider);
@@ -127,7 +128,8 @@ void CyberpunkGlitchEditor::createHFader(const std::string& id, const juce::Stri
 }
 
 void CyberpunkGlitchEditor::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds().toFloat();
+    g.addTransform(ff360_ui::EditorScaling::transformFor(*this)); // draw at the design size
+    auto bounds = ff360_ui::EditorScaling::designBounds().toFloat();
     
     juce::ColourGradient bgGrad(juce::Colour(ff360_ui::Colors::MatteCharcoal), 0, 0,
                                 juce::Colour(0xFF131316), 0, bounds.getHeight(), false);
@@ -137,17 +139,17 @@ void CyberpunkGlitchEditor::paint(juce::Graphics& g) {
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold).withAlpha(0.16f));
     g.drawRect(bounds, 1.0f);
     
-    g.setFont(juce::Font(10.0f, juce::Font::bold));
+    g.setFont(ff360_ui::brandFont(10.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold));
     g.drawText("8 * BEAT-SYNCED GLITCH EFFECTS", 16, 12, bounds.getWidth() - 32, 12, juce::Justification::left);
     
-    g.setFont(juce::Font(12.0f, juce::Font::bold));
+    g.setFont(ff360_ui::brandFont(12.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::TextDim));
     g.drawText("CYBERPUNK GLITCH", 16, 26, bounds.getWidth() - 32, 14, juce::Justification::left);
 }
 
 void CyberpunkGlitchEditor::resized() {
-    auto bounds = getLocalBounds().reduced(16);
+    auto bounds = ff360_ui::EditorScaling::designBounds().reduced(16);
     bounds.removeFromTop(24);
     bounds.removeFromTop(4);
     m_workflowBar.setBounds(bounds.removeFromTop(26));
@@ -198,6 +200,10 @@ void CyberpunkGlitchEditor::resized() {
         k.slider.setBounds(x, inner.getY(), knobW, knobH);
         k.label.setBounds(x - 10, k.slider.getBottom(), knobW + 20, 14);
     }
+
+    // Laid out at the design size; scale everything to the window
+    ff360_ui::EditorScaling::applyToChildren(*this);
+    m_processor.setEditorScale(ff360_ui::EditorScaling::scaleOf(*this));
 }
 
 #endif

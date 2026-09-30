@@ -28,6 +28,17 @@ else()
     FetchContent_MakeAvailable(juce)
 endif()
 
+# Brand fonts (Barlow Condensed, SIL OFL 1.1: ff360_ui_core/fonts/BarlowCondensed-OFL.txt),
+# embedded in every plugin and used by ff360_ui::FF360_LookAndFeel
+juce_add_binary_data(ff360_fonts
+    HEADER_NAME FF360Fonts.h
+    NAMESPACE ff360_fonts
+    SOURCES
+        ff360_ui_core/fonts/BarlowCondensed-Regular.ttf
+        ff360_ui_core/fonts/BarlowCondensed-SemiBold.ttf
+)
+set_target_properties(ff360_fonts PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
+
 function(add_synthwave_plugin TARGET_NAME PLUGIN_NAME PLUGIN_CODE)
     juce_add_plugin(${TARGET_NAME}
         COMPANY_NAME "ff360 Labs"
@@ -54,6 +65,7 @@ function(add_synthwave_plugin TARGET_NAME PLUGIN_NAME PLUGIN_CODE)
 
     target_link_libraries(${TARGET_NAME} PRIVATE
         ff360_dsp_core
+        ff360_fonts
         juce::juce_audio_utils
         juce::juce_audio_processors
         juce::juce_dsp
@@ -164,6 +176,7 @@ if(FF360_BUILD_WORKFLOW_TESTS)
     )
     target_link_libraries(ff360_workflow_tests PRIVATE
         ff360_dsp_core
+        ff360_fonts
         juce::juce_audio_utils
         juce::juce_audio_processors
         juce::juce_dsp

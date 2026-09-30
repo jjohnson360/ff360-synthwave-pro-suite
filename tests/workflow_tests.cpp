@@ -558,6 +558,56 @@ void testDelta() {
     testReverbDeltaIsWetOnly();
 }
 
+
+// Resizable editors and the brand font
+void testScalingAndFonts(const juce::File& snapshotDir) {
+    std::cout << "Scaling and fonts\n";
+    currentPlugin = "scaling";
+    {
+        NightDriveProcessor proc;
+        proc.setEditorScale(1.5f);
+        std::unique_ptr<juce::AudioProcessorEditor> editor(proc.createEditor());
+        check(editor->getWidth() == 525 && editor->getHeight() == 1068,
+              "editor opens at its saved size (" + juce::String(editor->getWidth()) + " x " + juce::String(editor->getHeight()) + ")");
+        check(editor->isResizable(), "editor is resizable");
+        auto* c = editor->getConstrainer();
+        check(c != nullptr && std::abs(c->getFixedAspectRatio() - 350.0 / 712.0) < 1.0e-6, "aspect ratio is locked");
+        check(c != nullptr && c->getMinimumWidth() == 262 && c->getMaximumWidth() == 700, "75% to 200% (" + juce::String(c ? c->getMinimumWidth() : -1) + " to " + juce::String(c ? c->getMaximumWidth() : -1) + ")");
+
+        editor->setSize(700, 1424);
+        check(std::abs(proc.getEditorScale() - 2.0f) < 1.0e-4f, "resizing updates the saved scale");
+
+        juce::MemoryBlock state;
+        proc.getStateInformation(state);
+        NightDriveProcessor restored;
+        restored.setStateInformation(state.getData(), (int)state.getSize());
+        check(std::abs(restored.getEditorScale() - 2.0f) < 1.0e-4f, "the size is saved with the session");
+
+        editor->setSize(525, 1068);
+        if (snapshotDir != juce::File()) {
+            auto img = editor->createComponentSnapshot(editor->getLocalBounds(), true, 1.0f);
+            auto file = snapshotDir.getChildFile("NightDrive_150.png");
+            file.deleteFile();
+            juce::FileOutputStream out(file);
+            juce::PNGImageFormat().writeImageToStream(img, out);
+        }
+    }
+    {
+        currentPlugin = "fonts";
+        // What text actually renders with (JUCE resolves fonts through the default LookAndFeel)
+        auto resolved = [] (int style) {
+            auto t = juce::Font(12.0f, style).getTypefacePtr();
+            return t != nullptr ? t->getName() + " " + t->getStyle() : juce::String("none");
+        };
+        {
+            ff360_ui::FF360_LookAndFeel lnf; // as held by an open editor
+            check(resolved(juce::Font::plain).startsWith("Barlow Condensed"), "text renders in Barlow Condensed (got " + resolved(juce::Font::plain) + ")");
+            check(resolved(juce::Font::bold).containsIgnoreCase("Barlow Condensed SemiBold"), "bold text renders in Barlow Condensed SemiBold (got " + resolved(juce::Font::bold) + ")");
+        }
+        check(!resolved(juce::Font::plain).startsWith("Barlow"), "the default goes back once no editor is open");
+    }
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -572,6 +622,7 @@ int main(int argc, char* argv[]) {
     testOutputStage();
     testOversampling();
     testDelta();
+    testScalingAndFonts(snapshotDir);
     testPlugin<VHSPluginProcessor>("VHS", ff360::getVhsPresets(), snapshotDir);
     testPlugin<NeonChorusProcessor>("Neon Chorus", ff360::getNeonChorusPresets(), snapshotDir);
     testPlugin<MidnightReverbProcessor>("Midnight Reverb", ff360::getMidnightReverbPresets(), snapshotDir);

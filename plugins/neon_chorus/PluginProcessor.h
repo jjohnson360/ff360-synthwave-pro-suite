@@ -43,6 +43,9 @@ public:
     juce::AudioProcessorParameter* getBypassParameter() const override { return m_apvts.getParameter(ff360_ui::output::bypassId); }
     ff360_ui::EditHistory& getHistory() { return m_history; }
     ff360_ui::PresetManager& getPresetManager() { return m_presetManager; }
+    // Editor size as a scale of its design size (ff360_ui::EditorScaling), saved with the session
+    float getEditorScale() const { return m_editorScale.load(); }
+    void setEditorScale(float s) { m_editorScale.store(s); }
     ff360::FF360_DSP_MeteringBridge& getMeteringBridge() { return m_meteringBridge; }
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -59,6 +62,7 @@ private:
     // closing the plugin window; declared after m_apvts, which they use.
     ff360_ui::EditHistory m_history;
     ff360_ui::PresetManager m_presetManager;
+    std::atomic<float> m_editorScale { 1.0f };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(NeonChorusProcessor)
 };

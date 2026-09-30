@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DesignTokens.h"
+#include "Fonts.h"
 
 #if __has_include(<juce_gui_basics/juce_gui_basics.h>)
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -222,7 +223,7 @@ private:
                     break;
                 }
                 case Icon::Text:
-                    g.setFont(juce::Font(10.5f, juce::Font::bold));
+                    g.setFont(ff360_ui::brandFont(10.5f, juce::Font::bold));
                     g.drawText(getButtonText(), r, juce::Justification::centred, false);
                     break;
             }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DesignTokens.h"
+#include "Fonts.h"
 
 #if __has_include(<juce_gui_basics/juce_gui_basics.h>)
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -78,7 +79,7 @@ public:
         }
 
         m_label.setText("OUT", juce::dontSendNotification);
-        m_label.setFont(juce::Font(8.0f, juce::Font::bold));
+        m_label.setFont(ff360_ui::brandFont(8.0f, juce::Font::bold));
         m_label.setBorderSize({});
         m_label.setColour(juce::Label::textColourId, juce::Colour(Colors::TextDim));
         addAndMakeVisible(m_label);
@@ -92,7 +93,7 @@ public:
         m_gain.getProperties().set("ff360ShowsValue", true); // has its own dB readout
         addAndMakeVisible(m_gain);
 
-        m_gainValue.setFont(juce::Font(9.0f, juce::Font::bold));
+        m_gainValue.setFont(ff360_ui::brandFont(9.0f, juce::Font::bold));
         m_gainValue.setJustificationType(juce::Justification::centredRight);
         m_gainValue.setColour(juce::Label::textColourId, juce::Colour(Colors::TextOffWhite));
         addAndMakeVisible(m_gainValue);

@@ -37,7 +37,7 @@ VHSPluginEditor::VHSPluginEditor(VHSPluginProcessor& p)
     m_ff360Label.setText("ff360_labs", juce::dontSendNotification);
     m_ff360Label.setJustificationType(juce::Justification::centredRight);
     m_ff360Label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
-    m_ff360Label.setFont(juce::Font(9.0f, juce::Font::plain));
+    m_ff360Label.setFont(ff360_ui::brandFont(9.0f, juce::Font::plain));
     addAndMakeVisible(m_ff360Label);
 
     // 10 parameter knobs (2 rows of 5)
@@ -58,7 +58,7 @@ VHSPluginEditor::VHSPluginEditor(VHSPluginProcessor& p)
     m_modeNextButton.setButtonText(">");
     m_modeLabel.setText("MODE - VHS", juce::dontSendNotification);
     m_modeLabel.setJustificationType(juce::Justification::centred);
-    m_modeLabel.setFont(juce::Font(10.0f, juce::Font::bold));
+    m_modeLabel.setFont(ff360_ui::brandFont(10.0f, juce::Font::bold));
     m_modeLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::MetallicGold));
     
     // Hidden until tape modes exist (the arrows had no function); addAndMakeVisible to bring them back
@@ -74,11 +74,11 @@ VHSPluginEditor::VHSPluginEditor(VHSPluginProcessor& p)
     ff360_ui::showValuePopup(m_mixSlider, m_processor.getApvts(), "mix", this);
     
     m_mixLabel.setText("MIX", juce::dontSendNotification);
-    m_mixLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    m_mixLabel.setFont(ff360_ui::brandFont(9.0f, juce::Font::bold));
     m_mixLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
     ff360_ui::bindValueLabel(m_mixSlider, m_mixValueLabel);
-    m_mixValueLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+    m_mixValueLabel.setFont(ff360_ui::brandFont(9.0f, juce::Font::bold));
     m_mixValueLabel.setJustificationType(juce::Justification::centredRight);
     
     addAndMakeVisible(m_mixSlider);
@@ -100,7 +100,8 @@ VHSPluginEditor::VHSPluginEditor(VHSPluginProcessor& p)
     m_knobs["drift"].slider.setTooltip("Pitch Drift: slow drift in pitch.");
     m_mixSlider.setTooltip("Mix: balance between the dry signal and the tape.");
 
-    setSize(350, 712);
+    // Resizable (75% to 200%, aspect locked), reopening at the size it was left at
+    ff360_ui::EditorScaling::setup(*this, m_processor.getEditorScale());
 }
 
 VHSPluginEditor::~VHSPluginEditor() {
@@ -117,7 +118,7 @@ void VHSPluginEditor::createKnob(const std::string& id, const juce::String& name
     
     k.label.setText(name, juce::dontSendNotification);
     k.label.setJustificationType(juce::Justification::centred);
-    k.label.setFont(juce::Font(8.5f, juce::Font::plain));
+    k.label.setFont(ff360_ui::brandFont(8.5f, juce::Font::plain));
     k.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
     addAndMakeVisible(k.slider);
@@ -125,7 +126,8 @@ void VHSPluginEditor::createKnob(const std::string& id, const juce::String& name
 }
 
 void VHSPluginEditor::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds().toFloat();
+    g.addTransform(ff360_ui::EditorScaling::transformFor(*this)); // draw at the design size
+    auto bounds = ff360_ui::EditorScaling::designBounds().toFloat();
     
     // Background gradient
     juce::ColourGradient bgGrad(juce::Colour(ff360_ui::Colors::MatteCharcoal), 0, 0,
@@ -138,17 +140,17 @@ void VHSPluginEditor::paint(juce::Graphics& g) {
     g.drawRect(bounds, 1.0f);
     
     // Eyebrow and Title
-    g.setFont(juce::Font(10.0f, juce::Font::bold));
+    g.setFont(ff360_ui::brandFont(10.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::MetallicGold));
     g.drawText("1 * TAPE DEGRADATION", 16, 12, bounds.getWidth() - 32, 12, juce::Justification::left);
     
-    g.setFont(juce::Font(12.0f, juce::Font::bold));
+    g.setFont(ff360_ui::brandFont(12.0f, juce::Font::bold));
     g.setColour(juce::Colour(ff360_ui::Colors::TextDim));
     g.drawText("VHS", 16, 26, bounds.getWidth() - 32, 14, juce::Justification::left);
 }
 
 void VHSPluginEditor::resized() {
-    auto bounds = getLocalBounds().reduced(16);
+    auto bounds = ff360_ui::EditorScaling::designBounds().reduced(16);
     bounds.removeFromTop(24); // header space
     bounds.removeFromTop(4);
     m_workflowBar.setBounds(bounds.removeFromTop(26));
@@ -207,6 +209,10 @@ void VHSPluginEditor::resized() {
     m_mixLabel.setBounds(mixRow.getX(), mixRow.getY(), 40, 12);
     m_mixValueLabel.setBounds(mixRow.getRight() - 40, mixRow.getY(), 40, 12);
     m_mixSlider.setBounds(mixRow.getX(), mixRow.getY() + 14, mixRow.getWidth(), 6);
+
+    // Laid out at the design size; scale everything to the window
+    ff360_ui::EditorScaling::applyToChildren(*this);
+    m_processor.setEditorScale(ff360_ui::EditorScaling::scaleOf(*this));
 }
 
 #endif
