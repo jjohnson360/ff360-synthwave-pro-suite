@@ -4,6 +4,7 @@
 #include "PluginProcessor.h"
 #include "ff360_ui/LookAndFeel.h"
 #include "ff360_ui/WorkflowBar.h"
+#include "ff360_ui/ControlHelpers.h"
 #include "ff360_ui/OutputStrip.h"
 #include "ff360_ui/HeroKnob.h"
 #include "ff360_ui/GlassPanel.h"

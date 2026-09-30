@@ -46,6 +46,19 @@ NeonChorusEditor::NeonChorusEditor(NeonChorusProcessor& p)
     addAndMakeVisible(m_d2);
     addAndMakeVisible(m_d3);
 
+
+    // Tooltips: every control explains itself on hover (the editor test fails on any without one)
+    m_knobs["rate"].slider.setTooltip("Rate: speed of the chorus sweep.");
+    m_knobs["depth"].slider.setTooltip("Depth: how far the voices sweep.");
+    m_knobs["detune"].slider.setTooltip("Detune: pitch spread between the voices.");
+    m_knobs["feedback"].slider.setTooltip("Feedback: feeds the chorus back into itself for a more metallic, flanger-like sound.");
+    m_knobs["width"].slider.setTooltip("Width: stereo spread of the voices.");
+    m_knobs["predelay"].slider.setTooltip("Pre-delay: delay before the chorus voices, in ms.");
+    m_knobs["mix"].slider.setTooltip("Mix: balance between the dry signal and the chorus.");
+    m_knobs["bassmono"].slider.setTooltip("Bass Mono: keeps everything below this frequency in mono (0 = off).");
+    m_quadButton.setTooltip("Quad Chorus: 4 voices instead of 2.");
+    m_vintageButton.setTooltip("Vintage: vintage chorus character. Off gives a cleaner, modern chorus.");
+
     setSize(350, 712);
 }
 
@@ -64,6 +77,8 @@ void NeonChorusEditor::createKnob(const std::string& id, const juce::String& nam
     
     k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, k.slider);
+    
+    ff360_ui::showValuePopup(k.slider, m_processor.getApvts(), id, this);
     
     k.label.setText(name, juce::dontSendNotification);
     k.label.setJustificationType(juce::Justification::centred);

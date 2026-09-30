@@ -51,6 +51,33 @@ void edit(juce::RangedAudioParameter& p, float normalised) {
     p.endChangeGesture();
 }
 
+
+// Every visible control in a component tree, depth first
+void collectControls(juce::Component& root, std::vector<juce::Component*>& out) {
+    for (auto* c : root.getChildren()) {
+        if (!c->isVisible()) continue;
+        if (dynamic_cast<juce::Slider*>(c) || dynamic_cast<juce::Button*>(c) || dynamic_cast<juce::ComboBox*>(c)
+            || dynamic_cast<ff360_ui::FF360_HeroKnob*>(c))
+            out.push_back(c);
+        collectControls(*c, out);
+    }
+}
+
+juce::String tooltipOf(juce::Component* c) {
+    if (auto* t = dynamic_cast<juce::TooltipClient*>(c)) return t->getTooltip();
+    return {};
+}
+
+// Text of every visible label in the editor
+juce::StringArray labelTexts(juce::Component& root) {
+    juce::StringArray texts;
+    for (auto* c : root.getChildren()) {
+        if (auto* l = dynamic_cast<juce::Label*>(c)) texts.add(l->getText());
+        texts.addArray(labelTexts(*c));
+    }
+    return texts;
+}
+
 template <typename Proc>
 void testPlugin(const juce::String& name, const std::vector<ff360::Preset>& factory, const juce::File& snapshotDir) {
     currentPlugin = name;
@@ -236,6 +263,28 @@ void testPlugin(const juce::String& name, const std::vector<ff360::Preset>& fact
     // ---- Editor ----
     std::unique_ptr<juce::AudioProcessorEditor> editor(proc.createEditor());
     check(editor->getWidth() == 350 && editor->getHeight() == 712, "editor is 350 x 712");
+
+    // Every control explains itself on hover. VHS's mode arrows are placeholders with no
+    // function yet, so they're the one exception.
+    {
+        std::vector<juce::Component*> controls;
+        collectControls(*editor, controls);
+        check(controls.size() >= 8, "editor has controls to check");
+        for (auto* c : controls) {
+            auto* b = dynamic_cast<juce::Button*>(c);
+            const bool placeholder = b != nullptr && (b->getButtonText() == "<" || b->getButtonText() == ">");
+            if (!placeholder)
+                check(tooltipOf(c).isNotEmpty(), "control has a tooltip: " + c->getName()
+                      + (b != nullptr ? " '" + b->getButtonText() + "'" : juce::String()));
+        }
+        // Sliders show their value with its unit while dragging
+        int withPopup = 0;
+        for (auto* c : controls)
+            if (auto* sl = dynamic_cast<juce::Slider*>(c); sl != nullptr && (bool)sl->getProperties()["ff360ShowsValue"]) ++withPopup;
+        int sliders = 0;
+        for (auto* c : controls) if (dynamic_cast<juce::Slider*>(c)) ++sliders;
+        check(withPopup == sliders, "every slider shows its value (popup or readout) (" + juce::String(withPopup) + "/" + juce::String(sliders) + ")");
+    }
     auto snapshot = editor->createComponentSnapshot(editor->getLocalBounds(), true, 2.0f);
     if (snapshotDir != juce::File()) {
         auto file = snapshotDir.getChildFile(name.removeCharacters(" ") + ".png");
@@ -381,6 +430,70 @@ int main(int argc, char* argv[]) {
         for (auto* c : editor->getChildren())
             if (auto* k = dynamic_cast<ff360_ui::FF360_HeroKnob*>(c)) knob = k;
         check(knob != nullptr && near(knob->getValue(), 0.7f), "hero knob follows the parameter");
+    }
+
+
+    {
+        // Readouts follow their parameter (they used to be fixed placeholder text)
+        struct Readout { const char* plugin; const char* id; float plain; const char* expected; };
+        auto checkReadout = [](juce::AudioProcessor& proc, const Readout& r) {
+            currentPlugin = r.plugin;
+            std::unique_ptr<juce::AudioProcessorEditor> editor(proc.createEditor());
+            auto* apvts = dynamic_cast<juce::AudioProcessorValueTreeState*>(&proc) ; juce::ignoreUnused(apvts);
+            auto* p = dynamic_cast<juce::RangedAudioParameter*>(proc.getParameters()[0]); juce::ignoreUnused(p);
+            for (auto* param : proc.getParameters())
+                if (auto* rp = dynamic_cast<juce::RangedAudioParameter*>(param); rp != nullptr && rp->paramID == r.id)
+                    edit(*rp, rp->convertTo0to1(r.plain));
+            check(labelTexts(*editor).contains(r.expected), juce::String("readout shows ") + r.expected + " for " + r.id);
+        };
+        CyberpunkGlitchProcessor glitch;   checkReadout(glitch, { "Cyberpunk Glitch", "probability", 25.0f, "25%" });
+        CyberpunkGlitchProcessor glitch2;  checkReadout(glitch2, { "Cyberpunk Glitch", "filter", 2500.0f, "2.5 kHz" });
+        NeonWidthProcessor width;          checkReadout(width, { "Neon Width", "bassmono", 200.0f, "200 Hz" });
+        NightDriveProcessor nd1;           checkReadout(nd1, { "NightDrive", "evolve", 70.0f, "70%" });
+        NightDriveProcessor nd2;           checkReadout(nd2, { "NightDrive", "mix", 55.0f, "55%" });
+        NightDriveProcessor nd3;           checkReadout(nd3, { "NightDrive", "scduck", 40.0f, "40%" });
+        VHSPluginProcessor vhs;            checkReadout(vhs, { "VHS", "mix", 60.0f, "60%" });
+    }
+    {
+        // Value popups carry units
+        currentPlugin = "Midnight Reverb";
+        MidnightReverbProcessor proc;
+        std::unique_ptr<juce::AudioProcessorEditor> editor(proc.createEditor());
+        std::vector<juce::Component*> controls;
+        collectControls(*editor, controls);
+        juce::StringArray texts;
+        for (auto* c : controls)
+            if (auto* sl = dynamic_cast<juce::Slider*>(c)) texts.add(sl->getTextFromValue(sl->getValue()));
+        check(texts.contains("8.0 kHz"), "High Damp popup reads 8.0 kHz (got: " + texts.joinIntoString(", ") + ")");
+        check(texts.contains("20.0 ms"), "Pre-delay popup reads 20.0 ms");
+    }
+    {
+        // GENERATE FX makes sound (the button used to do nothing)
+        currentPlugin = "RetroFX";
+        RetroFXProcessor proc;
+        proc.setRateAndBufferSizeDetails(48000.0, 512);
+        proc.prepareToPlay(48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> editor(proc.createEditor());
+        juce::AudioBuffer<float> buf(2, 512);
+        juce::MidiBuffer midi;
+        auto peakOf = [&](int blocks) {
+            float peak = 0.0f;
+            for (int b = 0; b < blocks; ++b) {
+                buf.clear();
+                proc.processBlock(buf, midi);
+                peak = std::max(peak, buf.getMagnitude(0, buf.getNumSamples()));
+            }
+            return peak;
+        };
+        check(peakOf(10) < 1.0e-4f, "silent before GENERATE");
+        std::vector<juce::Component*> controls;
+        collectControls(*editor, controls);
+        juce::Button* generate = nullptr;
+        for (auto* c : controls)
+            if (auto* b = dynamic_cast<juce::Button*>(c); b != nullptr && b->getButtonText() == "GENERATE FX") generate = b;
+        check(generate != nullptr && generate->onClick != nullptr, "GENERATE FX has a click handler");
+        if (generate != nullptr && generate->onClick) generate->onClick();
+        check(peakOf(420) > 0.05f, "GENERATE FX produces sound"); // default: 4 s riser, quiet at first
     }
 
     std::cout << "\n" << (checks - failures) << " / " << checks << " checks passed\n";

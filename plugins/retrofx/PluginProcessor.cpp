@@ -94,11 +94,11 @@ void RetroFXProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     // Keep the input for bypass and auto gain
     m_outputStage.captureDry(buffer.getReadPointer(0), buffer.getReadPointer(numChannels > 1 ? 1 : 0), static_cast<size_t>(numSamples));
 
-    // Check MIDI triggers
+    // GENERATE FX button or a MIDI note; fired below, once this block's settings are applied
+    bool generate = m_generateRequested.exchange(false);
     for (const auto metadata : midiMessages) {
-        const auto msg = metadata.getMessage();
-        if (msg.isNoteOn()) {
-            triggerGenerate();
+        if (metadata.getMessage().isNoteOn()) {
+            generate = true;
         }
     }
 
@@ -113,7 +113,11 @@ void RetroFXProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     }
 
     const int genId = static_cast<int>(m_apvts.getRawParameterValue("generator")->load());
-    m_genEngine.selectGenerator(genId);
+    // Only on a change: selecting resets the generator's oscillator and filters, which clicks
+    if (genId != m_selectedGenerator) {
+        m_genEngine.selectGenerator(genId);
+        m_selectedGenerator = genId;
+    }
 
     ff360::GenerativeParameters p;
     p.syncMode = static_cast<ff360::GenerativeSyncMode>(static_cast<int>(m_apvts.getRawParameterValue("sync")->load()));
@@ -126,6 +130,9 @@ void RetroFXProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     p.mix = m_apvts.getRawParameterValue("mix")->load() * 0.01f;
 
     m_genEngine.setParameters(p);
+
+    if (generate)
+        triggerGenerate();
 
     float* left = buffer.getWritePointer(0);
     float* right = (numChannels > 1) ? buffer.getWritePointer(1) : buffer.getWritePointer(0);

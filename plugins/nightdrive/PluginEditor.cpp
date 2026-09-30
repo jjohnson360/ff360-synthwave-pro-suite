@@ -31,12 +31,13 @@ NightDriveEditor::NightDriveEditor(NightDriveProcessor& p)
     m_evolveSlider.setColour(juce::Slider::thumbColourId, juce::Colour(ff360_ui::Colors::AccessibleSky));
     m_evolveAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), "evolve", m_evolveSlider);
+    ff360_ui::showValuePopup(m_evolveSlider, m_processor.getApvts(), "evolve", this);
     
     m_evolveLabel.setText("EVOLUTION", juce::dontSendNotification);
     m_evolveLabel.setFont(juce::Font(9.0f, juce::Font::bold));
     m_evolveLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
-    m_evolveValueLabel.setText("50%", juce::dontSendNotification);
+    ff360_ui::bindValueLabel(m_evolveSlider, m_evolveValueLabel);
     m_evolveValueLabel.setFont(juce::Font(9.0f, juce::Font::bold));
     m_evolveValueLabel.setJustificationType(juce::Justification::centredRight);
     
@@ -50,12 +51,13 @@ NightDriveEditor::NightDriveEditor(NightDriveProcessor& p)
     m_mixSlider.setColour(juce::Slider::thumbColourId, juce::Colour(ff360_ui::Colors::MetallicGold));
     m_mixAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), "mix", m_mixSlider);
+    ff360_ui::showValuePopup(m_mixSlider, m_processor.getApvts(), "mix", this);
     
     m_mixLabel.setText("MIX", juce::dontSendNotification);
     m_mixLabel.setFont(juce::Font(9.0f, juce::Font::bold));
     m_mixLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
-    m_mixValueLabel.setText("100%", juce::dontSendNotification);
+    ff360_ui::bindValueLabel(m_mixSlider, m_mixValueLabel);
     m_mixValueLabel.setFont(juce::Font(9.0f, juce::Font::bold));
     m_mixValueLabel.setJustificationType(juce::Justification::centredRight);
     
@@ -69,12 +71,13 @@ NightDriveEditor::NightDriveEditor(NightDriveProcessor& p)
     m_scDuckSlider.setColour(juce::Slider::thumbColourId, juce::Colour(ff360_ui::Colors::AccessibleSky));
     m_scDuckAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), "scduck", m_scDuckSlider);
+    ff360_ui::showValuePopup(m_scDuckSlider, m_processor.getApvts(), "scduck", this);
 
     m_scDuckLabel.setText("SC DUCK", juce::dontSendNotification);
     m_scDuckLabel.setFont(juce::Font(9.0f, juce::Font::bold));
     m_scDuckLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
 
-    m_scDuckValueLabel.setText("0%", juce::dontSendNotification);
+    ff360_ui::bindValueLabel(m_scDuckSlider, m_scDuckValueLabel);
     m_scDuckValueLabel.setFont(juce::Font(9.0f, juce::Font::bold));
     m_scDuckValueLabel.setJustificationType(juce::Justification::centredRight);
 
@@ -96,6 +99,19 @@ NightDriveEditor::NightDriveEditor(NightDriveProcessor& p)
         m_processor.getApvts(), "scalelock", m_scaleBox);
     addAndMakeVisible(m_scaleBox);
 
+
+    // Tooltips: every control explains itself on hover (the editor test fails on any without one)
+    m_faders["granularlevel"].slider.setTooltip("Rain: level of the granular rain texture.");
+    m_faders["dronelevel"].slider.setTooltip("Road: level of the low drone.");
+    m_faders["density"].slider.setTooltip("City: density of the rain texture, in grains per second.");
+    m_faders["filtermove"].slider.setTooltip("Engine: how far the slow filter sweep moves.");
+    m_faders["arplevel"].slider.setTooltip("Neon: level of the tempo-synced arpeggio.");
+    m_faders["reverbwash"].slider.setTooltip("Atmos: size and amount of the reverb wash.");
+    m_scaleBox.setTooltip("Scale / chord the drone and arpeggio notes are locked to.");
+    m_evolveSlider.setTooltip("Evolution: animates the whole atmosphere (grain size, pitch spray, chorus and reverb movement).");
+    m_mixSlider.setTooltip("Mix: level of the generated atmosphere.");
+    m_scDuckSlider.setTooltip("SC Duck: pulls the atmosphere down while the sidechain input plays (needs a sidechain routed in).");
+
     setSize(350, 712);
 }
 
@@ -110,6 +126,7 @@ void NightDriveEditor::createFader(const std::string& id, const juce::String& na
     f.slider.setColour(juce::Slider::thumbColourId, juce::Colour(ff360_ui::Colors::WarmAmberRed));
     f.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, f.slider);
+    ff360_ui::showValuePopup(f.slider, m_processor.getApvts(), id, this);
     
     f.label.setText(name, juce::dontSendNotification);
     f.label.setJustificationType(juce::Justification::centred);

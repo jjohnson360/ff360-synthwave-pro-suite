@@ -31,18 +31,31 @@ NeonWidthEditor::NeonWidthEditor(NeonWidthProcessor& p)
     m_bassMonoSlider.setColour(juce::Slider::thumbColourId, juce::Colour(ff360_ui::Colors::WarmAmberRed));
     m_bassMonoAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), "bassmono", m_bassMonoSlider);
+    ff360_ui::showValuePopup(m_bassMonoSlider, m_processor.getApvts(), "bassmono", this);
     
     m_bassMonoLabel.setText("BASS MONO", juce::dontSendNotification);
     m_bassMonoLabel.setFont(juce::Font(9.0f, juce::Font::bold));
     m_bassMonoLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
-    m_bassMonoValueLabel.setText("120 Hz", juce::dontSendNotification); // would be updated via listener normally
+    ff360_ui::bindValueLabel(m_bassMonoSlider, m_bassMonoValueLabel);
     m_bassMonoValueLabel.setFont(juce::Font(9.0f, juce::Font::bold));
     m_bassMonoValueLabel.setJustificationType(juce::Justification::centredRight);
     
     addAndMakeVisible(m_bassMonoSlider);
     addAndMakeVisible(m_bassMonoLabel);
     addAndMakeVisible(m_bassMonoValueLabel);
+
+
+    // Tooltips: every control explains itself on hover (the editor test fails on any without one)
+    m_knobs["haas"].slider.setTooltip("Haas: widens by delaying one side slightly.");
+    m_knobs["microdelay"].slider.setTooltip("Micro Delay: delay between left and right, in ms.");
+    m_knobs["detune"].slider.setTooltip("Detune: detunes left against right for width.");
+    m_knobs["rotation"].slider.setTooltip("Rotation: rotates the stereo image left or right.");
+    m_knobs["freqcrossover"].slider.setTooltip("Crossover: frequency above which Freq Width applies.");
+    m_knobs["freqwidth"].slider.setTooltip("Freq Width: widens only above the crossover, keeping the low end focused.");
+    m_knobs["mix"].slider.setTooltip("Mix: balance between the dry signal and the widened one.");
+    m_faders["mswidth"].slider.setTooltip("Width: mid/side width. 0% is mono, 100% unchanged, 200% extra wide.");
+    m_bassMonoSlider.setTooltip("Bass Mono: keeps everything below this frequency in mono (0 = off).");
 
     setSize(350, 712);
     startTimerHz(30);
@@ -68,6 +81,7 @@ void NeonWidthEditor::createKnob(const std::string& id, const juce::String& name
     k.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, k.slider);
+    ff360_ui::showValuePopup(k.slider, m_processor.getApvts(), id, this);
     
     k.label.setText(name, juce::dontSendNotification);
     k.label.setJustificationType(juce::Justification::centred);
@@ -85,6 +99,7 @@ void NeonWidthEditor::createFader(const std::string& id, const juce::String& nam
     f.slider.setColour(juce::Slider::thumbColourId, juce::Colour(ff360_ui::Colors::AccessibleSky));
     f.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, f.slider);
+    ff360_ui::showValuePopup(f.slider, m_processor.getApvts(), id, this);
     
     f.label.setText(name, juce::dontSendNotification);
     f.label.setJustificationType(juce::Justification::centred);

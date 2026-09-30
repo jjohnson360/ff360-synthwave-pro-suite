@@ -45,6 +45,20 @@ CyberpunkGlitchEditor::CyberpunkGlitchEditor(CyberpunkGlitchProcessor& p)
     createKnob("mix", "MIX");
     createKnob("scsensitivity", "SC TRIG");
 
+
+    // Tooltips: every control explains itself on hover (the editor test fails on any without one)
+    m_divisionBox.setTooltip("Division: grid size of the glitch slices, synced to the host tempo.");
+    m_freezeToggle.setTooltip("Freeze: holds and repeats the current buffer.");
+    m_reverseToggle.setTooltip("Reverse: plays the slices backwards.");
+    m_faders["probability"].slider.setTooltip("Probability: chance that each grid step gets glitched.");
+    m_faders["filter"].slider.setTooltip("Filter: low-pass cutoff.");
+    m_knobs["bitcrush"].slider.setTooltip("Bitcrush: bit reduction for a harsher, digital sound.");
+    m_knobs["pitch"].slider.setTooltip("Pitch: pitch shift of the slices, in semitones.");
+    m_knobs["gate"].slider.setTooltip("Gate: how much of each step a slice plays (lower is choppier).");
+    m_knobs["resonance"].slider.setTooltip("Resonance: filter resonance.");
+    m_knobs["mix"].slider.setTooltip("Mix: balance between the dry signal and the glitches.");
+    m_knobs["scsensitivity"].slider.setTooltip("SC Trig: how readily a hit on the sidechain input starts a new slice (needs a sidechain routed in).");
+
     setSize(350, 712);
     startTimerHz(30);
 }
@@ -75,6 +89,8 @@ void CyberpunkGlitchEditor::createKnob(const std::string& id, const juce::String
     k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, k.slider);
     
+    ff360_ui::showValuePopup(k.slider, m_processor.getApvts(), id, this);
+    
     k.label.setText(name, juce::dontSendNotification);
     k.label.setJustificationType(juce::Justification::centred);
     k.label.setFont(juce::Font(8.5f, juce::Font::plain));
@@ -93,12 +109,14 @@ void CyberpunkGlitchEditor::createHFader(const std::string& id, const juce::Stri
     f.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, f.slider);
     
+    ff360_ui::showValuePopup(f.slider, m_processor.getApvts(), id, this);
+    
     f.label.setText(name, juce::dontSendNotification);
     f.label.setJustificationType(juce::Justification::left);
     f.label.setFont(juce::Font(9.0f, juce::Font::bold));
     f.label.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
-    f.valueLabel.setText("-", juce::dontSendNotification);
+    ff360_ui::bindValueLabel(f.slider, f.valueLabel);
     f.valueLabel.setJustificationType(juce::Justification::centredRight);
     f.valueLabel.setFont(juce::Font(9.0f, juce::Font::bold));
     f.valueLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));

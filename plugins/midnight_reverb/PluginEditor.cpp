@@ -55,6 +55,20 @@ MidnightReverbEditor::MidnightReverbEditor(MidnightReverbProcessor& p)
         m_processor.getApvts(), "synctoggle", m_syncButton);
     addAndMakeVisible(m_syncButton);
 
+
+    // Tooltips: every control explains itself on hover (the editor test fails on any without one)
+    m_algBox.setTooltip("Reverb algorithm.");
+    m_knobs["decay"].slider.setTooltip("Decay: length of the reverb tail.");
+    m_knobs["predelay"].slider.setTooltip("Pre-delay: gap before the reverb starts, in ms (or tempo-synced with SYNC).");
+    m_knobs["lowdamp"].slider.setTooltip("Low Cut: removes lows from the reverb below this frequency.");
+    m_knobs["highdamp"].slider.setTooltip("High Damp: darkens the tail above this frequency.");
+    m_knobs["width"].slider.setTooltip("Width: stereo width of the reverb.");
+    m_faders["ducking"].slider.setTooltip("Ducking: pulls the reverb down while the input plays (or the sidechain, if one is routed in).");
+    m_faders["modulation"].slider.setTooltip("Modulation: adds movement to the tail.");
+    m_faders["mix"].slider.setTooltip("Mix: balance between the dry signal and the reverb.");
+    m_freezeButton.setTooltip("Freeze: holds the current tail indefinitely.");
+    m_syncButton.setTooltip("Sync: locks the pre-delay to the host tempo.");
+
     setSize(350, 712);
 }
 
@@ -68,6 +82,7 @@ void MidnightReverbEditor::createKnob(const std::string& id, const juce::String&
     k.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, k.slider);
+    ff360_ui::showValuePopup(k.slider, m_processor.getApvts(), id, this);
     
     k.label.setText(name, juce::dontSendNotification);
     k.label.setJustificationType(juce::Justification::centred);
@@ -85,6 +100,7 @@ void MidnightReverbEditor::createFader(const std::string& id, const juce::String
     f.slider.setColour(juce::Slider::thumbColourId, accentColour);
     f.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, f.slider);
+    ff360_ui::showValuePopup(f.slider, m_processor.getApvts(), id, this);
     
     f.label.setText(name, juce::dontSendNotification);
     f.label.setJustificationType(juce::Justification::centred);

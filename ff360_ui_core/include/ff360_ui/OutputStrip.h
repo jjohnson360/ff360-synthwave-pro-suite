@@ -66,6 +66,7 @@ public:
         m_gainAttach = std::make_unique<Apvts::SliderAttachment>(apvts, output::outGainId, m_gain);
         m_gain.setDoubleClickReturnValue(true, 0.0);
         m_gain.onValueChange = [this] { updateGainText(); };
+        m_gain.getProperties().set("ff360ShowsValue", true); // has its own dB readout
         addAndMakeVisible(m_gain);
 
         m_gainValue.setFont(juce::Font(9.0f, juce::Font::bold));

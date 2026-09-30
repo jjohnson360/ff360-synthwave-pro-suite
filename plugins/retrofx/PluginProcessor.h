@@ -5,6 +5,7 @@
 #include "ff360/ParameterManager.h"
 #include "ff360/MeteringBridge.h"
 #include "Presets.h"
+#include <atomic>
 
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -47,12 +48,16 @@ public:
     ff360::FF360_DSP_MeteringBridge& getMeteringBridge() { return m_meteringBridge; }
 
     void triggerGenerate();
+    // From the UI: generates at the start of the next audio block (the generator isn't thread-safe)
+    void requestGenerate() { m_generateRequested.store(true); }
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
 private:
     juce::AudioProcessorValueTreeState m_apvts;
     ff360::FF360_DSP_GenerativeEngine m_genEngine;
+    std::atomic<bool> m_generateRequested { false };
+    int m_selectedGenerator = -1; // generator currently selected in m_genEngine
     ff360::FF360_DSP_ParameterManager m_paramManager;
     ff360::FF360_DSP_MeteringBridge m_meteringBridge;
     ff360::FF360_DSP_OutputStage m_outputStage; // auto gain, output trim, bypass

@@ -70,18 +70,34 @@ VHSPluginEditor::VHSPluginEditor(VHSPluginProcessor& p)
     m_mixSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     m_mixAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), "mix", m_mixSlider);
+    ff360_ui::showValuePopup(m_mixSlider, m_processor.getApvts(), "mix", this);
     
     m_mixLabel.setText("MIX", juce::dontSendNotification);
     m_mixLabel.setFont(juce::Font(9.0f, juce::Font::bold));
     m_mixLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     
-    m_mixValueLabel.setText("100%", juce::dontSendNotification);
+    ff360_ui::bindValueLabel(m_mixSlider, m_mixValueLabel);
     m_mixValueLabel.setFont(juce::Font(9.0f, juce::Font::bold));
     m_mixValueLabel.setJustificationType(juce::Justification::centredRight);
     
     addAndMakeVisible(m_mixSlider);
     addAndMakeVisible(m_mixLabel);
     addAndMakeVisible(m_mixValueLabel);
+
+
+    // Tooltips: every control explains itself on hover (the editor test fails on any without one)
+    m_degradeKnob->setTooltip("DEGRADE: one-knob tape wear. Raises all the tape effects together.");
+    m_knobs["wow"].slider.setTooltip("Wow: slow, wide pitch wobble.");
+    m_knobs["flutter"].slider.setTooltip("Flutter: fast, fine pitch wobble.");
+    m_knobs["noise"].slider.setTooltip("Noise: background tape noise.");
+    m_knobs["hiss"].slider.setTooltip("Hiss: high-frequency tape hiss.");
+    m_knobs["dropouts"].slider.setTooltip("Dropouts: random level drops, like worn tape.");
+    m_knobs["sat"].slider.setTooltip("Saturate: tape saturation.");
+    m_knobs["bitcrush"].slider.setTooltip("Bit Reduction: lowers the bit depth for a lo-fi digital edge.");
+    m_knobs["hfloss"].slider.setTooltip("HF Rolloff: the dulled top end of worn tape.");
+    m_knobs["stereodrift"].slider.setTooltip("Stereo Drift: left and right slowly drift apart.");
+    m_knobs["drift"].slider.setTooltip("Pitch Drift: slow drift in pitch.");
+    m_mixSlider.setTooltip("Mix: balance between the dry signal and the tape.");
 
     setSize(350, 712);
 }
@@ -96,6 +112,7 @@ void VHSPluginEditor::createKnob(const std::string& id, const juce::String& name
     k.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, k.slider);
+    ff360_ui::showValuePopup(k.slider, m_processor.getApvts(), id, this);
     
     k.label.setText(name, juce::dontSendNotification);
     k.label.setJustificationType(juce::Justification::centred);

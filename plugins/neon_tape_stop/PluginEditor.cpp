@@ -45,12 +45,24 @@ NeonTapeStopEditor::NeonTapeStopEditor(NeonTapeStopProcessor& p)
     m_mixSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     m_mixAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), "mix", m_mixSlider);
+    ff360_ui::showValuePopup(m_mixSlider, m_processor.getApvts(), "mix", this);
     m_mixLabel.setText("MIX", juce::dontSendNotification);
     m_mixLabel.setJustificationType(juce::Justification::left);
     m_mixLabel.setFont(juce::Font(9.0f, juce::Font::bold));
     m_mixLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::TextDim));
     addAndMakeVisible(m_mixSlider);
     addAndMakeVisible(m_mixLabel);
+
+
+    // Tooltips: every control explains itself on hover (the editor test fails on any without one)
+    m_triggerBtn.setTooltip("Stops the tape; click again to bring it back up to speed. MIDI note on / off does the same.");
+    m_profileBox.setTooltip("Stop profile: the shape of the slowdown.");
+    m_knobs["slowdown"].slider.setTooltip("Stop Time: how long the tape takes to stop.");
+    m_knobs["pitchcurve"].slider.setTooltip("Pitch Curve: shape of the pitch drop during the stop.");
+    m_knobs["filtermove"].slider.setTooltip("Filter: how much the tone darkens as the tape slows.");
+    m_knobs["recovery"].slider.setTooltip("Recovery: how long the tape takes to get back up to speed.");
+    m_reverseToggle.setTooltip("Reverse Rec: plays the recovery backwards.");
+    m_mixSlider.setTooltip("Mix: balance between the dry signal and the tape stop.");
 
     setSize(350, 712);
     startTimerHz(30);
@@ -82,6 +94,7 @@ void NeonTapeStopEditor::createKnob(const std::string& id, const juce::String& n
     k.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, k.slider);
+    ff360_ui::showValuePopup(k.slider, m_processor.getApvts(), id, this);
     
     k.label.setText(name, juce::dontSendNotification);
     k.label.setJustificationType(juce::Justification::centred);

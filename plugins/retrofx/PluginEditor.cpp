@@ -55,6 +55,7 @@ RetroFXEditor::RetroFXEditor(RetroFXProcessor& p)
     m_mixSlider.setColour(juce::Slider::thumbColourId, juce::Colour(ff360_ui::Colors::MetallicGold));
     m_mixAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), "mix", m_mixSlider);
+    ff360_ui::showValuePopup(m_mixSlider, m_processor.getApvts(), "mix", this);
     m_mixLabel.setText("MIX", juce::dontSendNotification);
     m_mixLabel.setJustificationType(juce::Justification::centred);
     m_mixLabel.setFont(juce::Font(8.5f, juce::Font::plain));
@@ -65,6 +66,21 @@ RetroFXEditor::RetroFXEditor(RetroFXProcessor& p)
     // Generate Button
     m_generateBtn.setButtonText("GENERATE FX");
     addAndMakeVisible(m_generateBtn);
+
+
+    // Tooltips: every control explains itself on hover (the editor test fails on any without one)
+    m_generatorBox.setTooltip("Type of FX to generate.");
+    m_syncBox.setTooltip("Duration: synced to the host tempo, or free (set by Length).");
+    m_knobs["intensity"].slider.setTooltip("Intensity: how strong the generated FX is.");
+    m_knobs["startpitch"].slider.setTooltip("Start Pitch: where the sweep starts, in semitones.");
+    m_knobs["endpitch"].slider.setTooltip("End Pitch: where the sweep ends, in semitones.");
+    m_knobs["length"].slider.setTooltip("Length: duration in seconds when Duration is set to free.");
+    m_knobs["seed"].slider.setTooltip("Seed: the same seed recreates the same FX.");
+    m_mixSlider.setTooltip("Mix: balance between the input and the generated FX.");
+    m_generateBtn.setTooltip("Generates the FX now. A MIDI note does the same.");
+
+    // Queued for the audio thread, which owns the generator
+    m_generateBtn.onClick = [this] { m_processor.requestGenerate(); };
 
     setSize(350, 712);
 }
@@ -79,6 +95,7 @@ void RetroFXEditor::createKnob(const std::string& id, const juce::String& name) 
     k.slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         m_processor.getApvts(), id, k.slider);
+    ff360_ui::showValuePopup(k.slider, m_processor.getApvts(), id, this);
     
     k.label.setText(name, juce::dontSendNotification);
     k.label.setJustificationType(juce::Justification::centred);
