@@ -47,6 +47,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout CyberpunkGlitchProcessor::cr
         juce::ParameterID{ "scsensitivity", 1 }, "Sidechain Trigger", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 0.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
+    // Oversampling around the engine (ff360_ui::Oversampler)
+    ff360_ui::Oversampler::addParameter(params); // Off / 2x (default) / 4x
+
     // Output trim, auto gain and bypass (ff360::FF360_DSP_OutputStage)
     ff360_ui::output::addParameters(params, true);
 
@@ -59,8 +62,8 @@ CyberpunkGlitchProcessor::CyberpunkGlitchProcessor()
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)
                      .withInput("Sidechain", juce::AudioChannelSet::stereo(), false)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
-      m_history(*this, {}, { "bypass" }),
-      m_presetManager(m_apvts, m_history, "Cyberpunk Glitch", ff360::getCyberpunkGlitchPresets(), { "bypass" }) {
+      m_history(*this, {}, { "bypass", "oversampling" }),
+      m_presetManager(m_apvts, m_history, "Cyberpunk Glitch", ff360::getCyberpunkGlitchPresets(), { "bypass", "oversampling" }) {
 }
 
 bool CyberpunkGlitchProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
@@ -73,10 +76,34 @@ bool CyberpunkGlitchProcessor::isBusesLayoutSupported(const BusesLayout& layouts
 }
 
 void CyberpunkGlitchProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
+    m_baseRate = sampleRate;
+    m_maxBlock = samplesPerBlock;
     m_outputStage.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
-    m_glitchEngine.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_meteringBridge.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_paramManager.prepare(sampleRate);
+    m_oversampler.prepare(2, samplesPerBlock);
+    applyOversampling(ff360_ui::Oversampler::readOrder(m_apvts));
+}
+
+void CyberpunkGlitchProcessor::applyOversampling(int order) {
+    m_oversampler.setOrder(order);
+    const double rate = m_baseRate * m_oversampler.getFactor();
+    const size_t block = static_cast<size_t>(m_maxBlock * m_oversampler.getFactor());
+    m_glitchEngine.prepare(rate, block);
+    m_scUpL.assign(block, 0.0f);
+    m_scUpR.assign(block, 0.0f);
+
+    // The host compensates this; the dry path (bypass, auto gain) is delayed to match
+    const int latency = m_oversampler.getLatencySamples();
+    m_outputStage.setDryDelay(static_cast<size_t>(latency));
+    setLatencySamples(latency);
+}
+
+void CyberpunkGlitchProcessor::handleAsyncUpdate() {
+    // The Oversampling setting changed: re-prepare with the audio thread held off
+    suspendProcessing(true);
+    applyOversampling(ff360_ui::Oversampler::readOrder(m_apvts));
+    suspendProcessing(false);
 }
 
 void CyberpunkGlitchProcessor::releaseResources() {
@@ -90,6 +117,10 @@ void CyberpunkGlitchProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     const int numChannels = buffer.getNumChannels();
 
     if (numChannels == 0 || numSamples == 0) return;
+
+    // Oversampling setting changed: switch on the message thread (it re-prepares the engine)
+    if (ff360_ui::Oversampler::readOrder(m_apvts) != m_oversampler.getOrder())
+        triggerAsyncUpdate();
 
     // Keep the input for bypass and auto gain
     m_outputStage.captureDry(buffer.getReadPointer(0), buffer.getReadPointer(numChannels > 1 ? 1 : 0), static_cast<size_t>(numSamples));
@@ -133,7 +164,21 @@ void CyberpunkGlitchProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         scRight = (scBuffer.getNumChannels() > 1) ? scBuffer.getReadPointer(1) : scLeft;
     }
 
-    m_glitchEngine.processStereo(left, right, static_cast<size_t>(numSamples), scLeft, scRight);
+    m_oversampler.process(buffer, std::min(2, numChannels), [&](float* l, float* r, size_t n) {
+        // The sidechain only drives transient detection, so holding each sample is enough
+        const float* upL = scLeft;
+        const float* upR = scRight;
+        const size_t factor = static_cast<size_t>(m_oversampler.getFactor());
+        if (scLeft != nullptr && factor > 1 && n <= m_scUpL.size()) {
+            for (size_t i = 0; i < n; ++i) {
+                m_scUpL[i] = scLeft[i / factor];
+                m_scUpR[i] = scRight[i / factor];
+            }
+            upL = m_scUpL.data();
+            upR = m_scUpR.data();
+        }
+        m_glitchEngine.processStereo(l, r, n, upL, upR);
+    });
     m_outputStage.process(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readSettings(m_apvts));
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
 }

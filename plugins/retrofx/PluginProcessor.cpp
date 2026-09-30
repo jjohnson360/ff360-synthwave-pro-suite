@@ -39,6 +39,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout RetroFXProcessor::createPara
         juce::ParameterID{ "mix", 1 }, "Mix", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
+    // Oversampling around the engine (ff360_ui::Oversampler)
+    ff360_ui::Oversampler::addParameter(params); // Off / 2x (default) / 4x
+
     // Output trim, bypass (ff360::FF360_DSP_OutputStage)
     ff360_ui::output::addParameters(params, false);
 
@@ -50,8 +53,8 @@ RetroFXProcessor::RetroFXProcessor()
                      .withInput("Input", juce::AudioChannelSet::stereo(), true)
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
-      m_history(*this, {}, { "bypass" }),
-      m_presetManager(m_apvts, m_history, "RetroFX", ff360::getRetroFXPresets(), { "bypass" }) {
+      m_history(*this, {}, { "bypass", "oversampling" }),
+      m_presetManager(m_apvts, m_history, "RetroFX", ff360::getRetroFXPresets(), { "bypass", "oversampling" }) {
     setupGenerators();
 }
 
@@ -68,10 +71,33 @@ void RetroFXProcessor::setupGenerators() {
 }
 
 void RetroFXProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
+    m_baseRate = sampleRate;
+    m_maxBlock = samplesPerBlock;
     m_outputStage.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
-    m_genEngine.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_meteringBridge.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_paramManager.prepare(sampleRate);
+    m_oversampler.prepare(2, samplesPerBlock);
+    applyOversampling(ff360_ui::Oversampler::readOrder(m_apvts));
+}
+
+void RetroFXProcessor::applyOversampling(int order) {
+    m_oversampler.setOrder(order);
+    const double rate = m_baseRate * m_oversampler.getFactor();
+    const size_t block = static_cast<size_t>(m_maxBlock * m_oversampler.getFactor());
+    m_genEngine.prepare(rate, block);
+    m_selectedGenerator = -1; // re-select at the new rate
+
+    // The host compensates this; the dry path (bypass, auto gain) is delayed to match
+    const int latency = m_oversampler.getLatencySamples();
+    m_outputStage.setDryDelay(static_cast<size_t>(latency));
+    setLatencySamples(latency);
+}
+
+void RetroFXProcessor::handleAsyncUpdate() {
+    // The Oversampling setting changed: re-prepare with the audio thread held off
+    suspendProcessing(true);
+    applyOversampling(ff360_ui::Oversampler::readOrder(m_apvts));
+    suspendProcessing(false);
 }
 
 void RetroFXProcessor::releaseResources() {
@@ -90,6 +116,10 @@ void RetroFXProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     const int numChannels = buffer.getNumChannels();
 
     if (numChannels == 0 || numSamples == 0) return;
+
+    // Oversampling setting changed: switch on the message thread (it re-prepares the engine)
+    if (ff360_ui::Oversampler::readOrder(m_apvts) != m_oversampler.getOrder())
+        triggerAsyncUpdate();
 
     // Keep the input for bypass and auto gain
     m_outputStage.captureDry(buffer.getReadPointer(0), buffer.getReadPointer(numChannels > 1 ? 1 : 0), static_cast<size_t>(numSamples));
@@ -137,7 +167,9 @@ void RetroFXProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     float* left = buffer.getWritePointer(0);
     float* right = (numChannels > 1) ? buffer.getWritePointer(1) : buffer.getWritePointer(0);
 
-    m_genEngine.processStereo(left, right, static_cast<size_t>(numSamples));
+    m_oversampler.process(buffer, std::min(2, numChannels), [this](float* l, float* r, size_t n) {
+        m_genEngine.processStereo(l, r, n);
+    });
     m_outputStage.process(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readSettings(m_apvts));
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
 }

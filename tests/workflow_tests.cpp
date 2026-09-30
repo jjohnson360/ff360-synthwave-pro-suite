@@ -235,18 +235,23 @@ void testPlugin(const juce::String& name, const std::vector<ff360::Preset>& fact
         presets.loadPreset(1);
         check(bypass->getValue() > 0.5f, "loading a preset doesn't change bypass");
 
-        float maxDiff = 0.0f;
-        for (int block = 0; block < 4; ++block) {
+        // Bypassed output is the input delayed by the reported latency (oversampling), bit for bit
+        const int latency = proc.getLatencySamples();
+        std::vector<float> inHist[2], outHist[2];
+        for (int block = 0; block < 6; ++block) {
             fillNoise();
-            juce::AudioBuffer<float> input;
-            input.makeCopyOf(buf);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < buf.getNumSamples(); ++i) inHist[ch].push_back(buf.getSample(ch, i));
             proc.processBlock(buf, midi);
-            if (block >= 1) // the first block holds the 10 ms fade
-                for (int ch = 0; ch < 2; ++ch)
-                    for (int i = 0; i < buf.getNumSamples(); ++i)
-                        maxDiff = std::max(maxDiff, std::abs(buf.getSample(ch, i) - input.getSample(ch, i)));
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < buf.getNumSamples(); ++i) outHist[ch].push_back(buf.getSample(ch, i));
         }
-        check(maxDiff == 0.0f, "bypassed output is the input, bit for bit (max diff " + juce::String(maxDiff) + ")");
+        float maxDiff = 0.0f;
+        for (int ch = 0; ch < 2; ++ch)
+            for (size_t i = 1024 + (size_t)latency; i < outHist[ch].size(); ++i) // after the 10 ms fade
+                maxDiff = std::max(maxDiff, std::abs(outHist[ch][i] - inHist[ch][i - (size_t)latency]));
+        check(maxDiff == 0.0f, "bypassed output is the input, bit for bit, " + juce::String(latency)
+              + " samples late (max diff " + juce::String(maxDiff) + ")");
 
         edit(*bypass, 0.0f);
         bool finite = true;
@@ -264,18 +269,15 @@ void testPlugin(const juce::String& name, const std::vector<ff360::Preset>& fact
     std::unique_ptr<juce::AudioProcessorEditor> editor(proc.createEditor());
     check(editor->getWidth() == 350 && editor->getHeight() == 712, "editor is 350 x 712");
 
-    // Every control explains itself on hover. VHS's mode arrows are placeholders with no
-    // function yet, so they're the one exception.
+    // Every control explains itself on hover
     {
         std::vector<juce::Component*> controls;
         collectControls(*editor, controls);
         check(controls.size() >= 8, "editor has controls to check");
         for (auto* c : controls) {
             auto* b = dynamic_cast<juce::Button*>(c);
-            const bool placeholder = b != nullptr && (b->getButtonText() == "<" || b->getButtonText() == ">");
-            if (!placeholder)
-                check(tooltipOf(c).isNotEmpty(), "control has a tooltip: " + c->getName()
-                      + (b != nullptr ? " '" + b->getButtonText() + "'" : juce::String()));
+            check(tooltipOf(c).isNotEmpty(), "control has a tooltip: " + c->getName()
+                  + (b != nullptr ? " '" + b->getButtonText() + "'" : juce::String()));
         }
         // Sliders show their value with its unit while dragging
         int withPopup = 0;
@@ -378,6 +380,102 @@ void testOutputStage() {
         check(std::abs(L[100] / inL[100] - 1.9953f) < 1.0e-3f, "mono gets the gain once, not twice");
     }
 }
+
+// Energy (dB) in the FFT bins around each frequency, for a mono signal at 48 kHz
+double bandEnergyDb(const std::vector<float>& x, std::initializer_list<double> freqs) {
+    constexpr int order = 14, size = 1 << order; // 16384 points, ~2.9 Hz bins
+    juce::dsp::FFT fft(order);
+    std::vector<float> data(2 * size, 0.0f);
+    for (int i = 0; i < size; ++i) {
+        const float w = 0.5f - 0.5f * std::cos(juce::MathConstants<float>::twoPi * (float)i / (float)(size - 1)); // Hann
+        data[(size_t)i] = x[x.size() - size + (size_t)i] * w;
+    }
+    fft.performFrequencyOnlyForwardTransform(data.data());
+    double energy = 1.0e-30;
+    for (double f : freqs) {
+        const int bin = (int)std::round(f / 48000.0 * size);
+        for (int b = bin - 3; b <= bin + 3; ++b) energy += (double)data[(size_t)b] * data[(size_t)b];
+    }
+    return 10.0 * std::log10(energy);
+}
+
+// Sets a parameter's plain value (no gesture)
+void setPlain(juce::AudioProcessorValueTreeState& apvts, const juce::String& id, float plain) {
+    if (auto* p = apvts.getParameter(id)) p->setValueNotifyingHost(p->convertTo0to1(plain));
+}
+
+// Oversampling in one plugin: latency per factor, and the setting survives a session reload
+template <typename Proc>
+void testOversamplingLatency(const juce::String& name) {
+    currentPlugin = name;
+    Proc proc;
+    proc.setRateAndBufferSizeDetails(48000.0, 512);
+    auto& apvts = proc.getApvts();
+    check(apvts.getParameter("oversampling") != nullptr, "has an Oversampling setting");
+    int latencies[3] = {};
+    for (int order = 0; order <= 2; ++order) {
+        setPlain(apvts, "oversampling", (float)order);
+        proc.prepareToPlay(48000.0, 512); // applies it, as the async switch does
+        latencies[order] = proc.getLatencySamples();
+    }
+    check(latencies[0] == 0, "Off adds no latency");
+    check(latencies[1] > 0 && latencies[1] < 16, "2x reports a small latency (" + juce::String(latencies[1]) + ")");
+    check(latencies[2] > 0 && latencies[2] < 16, "4x reports a small latency (" + juce::String(latencies[2]) + ")");
+    check(proc.getPresetManager().getNumPresets() > 1 && [&] {
+        setPlain(apvts, "oversampling", 2.0f);
+        proc.getPresetManager().loadPreset(1);
+        return apvts.getParameter("oversampling")->getValue() == 1.0f;
+    }(), "loading a preset leaves Oversampling alone");
+}
+
+// VHS saturation on a 7 kHz sine: its 5th and 7th harmonics (35 / 49 kHz) fold back to
+// 13 kHz and 1 kHz without oversampling. Returns the energy at those alias frequencies.
+double vhsAliasEnergy(int order) {
+    VHSPluginProcessor proc;
+    auto& apvts = proc.getApvts();
+    for (auto* id : { "wow", "flutter", "drift", "noise", "hiss", "dropouts", "lofi", "bitcrush",
+                      "hfloss", "stereodrift", "warble", "degrade" })
+        setPlain(apvts, id, 0.0f);
+    setPlain(apvts, "sat", 100.0f);
+    setPlain(apvts, "inGain", 12.0f);
+    setPlain(apvts, "mix", 100.0f);
+    setPlain(apvts, "oversampling", (float)order);
+    proc.setRateAndBufferSizeDetails(48000.0, 512);
+    proc.prepareToPlay(48000.0, 512);
+
+    juce::AudioBuffer<float> buf(2, 512);
+    juce::MidiBuffer midi;
+    std::vector<float> out;
+    double phase = 0.0;
+    for (int block = 0; block < 64; ++block) {
+        for (int i = 0; i < 512; ++i) {
+            const float v = 0.5f * (float)std::sin(phase);
+            phase += juce::MathConstants<double>::twoPi * 7000.0 / 48000.0;
+            buf.setSample(0, i, v);
+            buf.setSample(1, i, v);
+        }
+        proc.processBlock(buf, midi);
+        out.insert(out.end(), buf.getReadPointer(0), buf.getReadPointer(0) + 512);
+    }
+    return bandEnergyDb(out, { 13000.0, 1000.0 }) - bandEnergyDb(out, { 7000.0 }); // relative to the fundamental
+}
+
+void testOversampling() {
+    std::cout << "Oversampling\n";
+    testOversamplingLatency<VHSPluginProcessor>("VHS");
+    testOversamplingLatency<NeonTapeStopProcessor>("Neon Tape Stop");
+    testOversamplingLatency<CyberpunkGlitchProcessor>("Cyberpunk Glitch");
+    testOversamplingLatency<RetroFXProcessor>("RetroFX");
+
+    currentPlugin = "VHS aliasing";
+    const double off = vhsAliasEnergy(0), x2 = vhsAliasEnergy(1), x4 = vhsAliasEnergy(2);
+    std::cout << "  aliasing vs fundamental: off " << juce::String(off, 1) << " dB, 2x " << juce::String(x2, 1)
+              << " dB, 4x " << juce::String(x4, 1) << " dB\n";
+    check(off > -80.0, "the test signal does alias without oversampling (" + juce::String(off, 1) + " dB)");
+    check(x2 < off - 12.0, "2x cuts aliasing by more than 12 dB");
+    check(x4 < off - 20.0, "4x cuts aliasing by more than 20 dB");
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -390,6 +488,7 @@ int main(int argc, char* argv[]) {
     }
 
     testOutputStage();
+    testOversampling();
     testPlugin<VHSPluginProcessor>("VHS", ff360::getVhsPresets(), snapshotDir);
     testPlugin<NeonChorusProcessor>("Neon Chorus", ff360::getNeonChorusPresets(), snapshotDir);
     testPlugin<MidnightReverbProcessor>("Midnight Reverb", ff360::getMidnightReverbPresets(), snapshotDir);

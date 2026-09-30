@@ -41,8 +41,9 @@ inline ff360::FF360_DSP_OutputStage::Settings readSettings(const juce::AudioProc
 
 } // namespace output
 
-// Footer row: [BYPASS]  OUT ────●──── +0.0 dB  [AUTO]
+// Footer row: [BYPASS]  OUT ────●──── +0.0 dB  [OS 2x] [AUTO]
 // AUTO shows the correction it's applying while on. Double-click the slider for 0 dB.
+// OS (oversampling) and AUTO only appear on plugins that have those parameters.
 class OutputStrip : public juce::Component, private juce::Timer {
 public:
     OutputStrip(juce::AudioProcessorValueTreeState& apvts, const ff360::FF360_DSP_OutputStage& stage)
@@ -84,6 +85,18 @@ public:
             addAndMakeVisible(m_auto);
             startTimerHz(10);
         }
+
+        if (auto* os = apvts.getParameter("oversampling")) {
+            m_osParam = os;
+            m_os.setColour(juce::ToggleButton::tickColourId, juce::Colour(Colors::MetallicGold));
+            m_os.setClickingTogglesState(false); // opens a menu instead
+            m_os.setTooltip("Oversampling: runs the effect at 2x or 4x the sample rate to reduce aliasing "
+                            "(harsh digital artifacts from saturation and bit reduction). Adds a little latency and CPU.");
+            m_os.onClick = [this] { showOversamplingMenu(); };
+            m_osAttach = std::make_unique<juce::ParameterAttachment>(*os, [this](float index) { updateOversamplingText((int)index); });
+            m_osAttach->sendInitialUpdate();
+            addAndMakeVisible(m_os);
+        }
     }
 
     void resized() override {
@@ -91,11 +104,15 @@ public:
         m_bypass.setBounds(b.removeFromLeft(58));
         b.removeFromLeft(8);
         if (m_autoAttach != nullptr) {
-            m_auto.setBounds(b.removeFromRight(58));
-            b.removeFromRight(8);
+            m_auto.setBounds(b.removeFromRight(52));
+            b.removeFromRight(6);
         }
-        m_label.setBounds(b.removeFromLeft(26));
-        m_gainValue.setBounds(b.removeFromRight(50));
+        if (m_osAttach != nullptr) {
+            m_os.setBounds(b.removeFromRight(46));
+            b.removeFromRight(6);
+        }
+        m_label.setBounds(b.removeFromLeft(24));
+        m_gainValue.setBounds(b.removeFromRight(46));
         m_gain.setBounds(b);
     }
 
@@ -116,9 +133,32 @@ private:
 
     void timerCallback() override { updateAutoText(); }
 
+    void updateOversamplingText(int index) {
+        static const char* names[] = { "OS off", "OS 2x", "OS 4x" };
+        m_os.setButtonText(names[juce::jlimit(0, 2, index)]);
+        m_os.setToggleState(index > 0, juce::dontSendNotification); // lit while oversampling
+    }
+
+    void showOversamplingMenu() {
+        const int current = (int)m_osParam->convertFrom0to1(m_osParam->getValue());
+        juce::PopupMenu menu;
+        menu.setLookAndFeel(&getLookAndFeel());
+        menu.addSectionHeader("Oversampling");
+        menu.addItem(1, "Off", true, current == 0);
+        menu.addItem(2, "2x", true, current == 1);
+        menu.addItem(3, "4x", true, current == 2);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&m_os),
+                           [safeThis = juce::Component::SafePointer<OutputStrip>(this)](int result) {
+                               if (safeThis != nullptr && result > 0)
+                                   safeThis->m_osAttach->setValueAsCompleteGesture((float)(result - 1));
+                           });
+    }
+
     const ff360::FF360_DSP_OutputStage& m_stage;
 
-    juce::ToggleButton m_bypass, m_auto; // drawn as pill toggles by FF360_LookAndFeel
+    juce::ToggleButton m_bypass, m_auto, m_os; // drawn as pill toggles by FF360_LookAndFeel
+    juce::RangedAudioParameter* m_osParam = nullptr;
+    std::unique_ptr<juce::ParameterAttachment> m_osAttach;
     juce::Slider m_gain;
     juce::Label m_label, m_gainValue;
 

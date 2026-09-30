@@ -56,6 +56,7 @@ function(add_synthwave_plugin TARGET_NAME PLUGIN_NAME PLUGIN_CODE)
         ff360_dsp_core
         juce::juce_audio_utils
         juce::juce_audio_processors
+        juce::juce_dsp
         juce::juce_gui_basics
         juce::juce_gui_extra
         juce::juce_graphics
@@ -165,6 +166,7 @@ if(FF360_BUILD_WORKFLOW_TESTS)
         ff360_dsp_core
         juce::juce_audio_utils
         juce::juce_audio_processors
+        juce::juce_dsp
         juce::juce_gui_extra
     )
     target_compile_definitions(ff360_workflow_tests PRIVATE

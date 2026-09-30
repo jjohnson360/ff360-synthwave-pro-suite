@@ -18,9 +18,9 @@ namespace ff360 {
 // slow (1 s) mean-square ballistics; the correction is held while the input is silent (reverb
 // tails, gaps) and limited to +/-12 dB. It's applied before the trim, so the trim still works.
 //
-// Bypass crossfades linearly to the untouched input over 10 ms. Dry and processed are sample
-// aligned because the plugins report no latency. The effect keeps running while bypassed, so
-// un-bypassing is click-free too.
+// Bypass crossfades linearly to the untouched input over 10 ms. When the effect adds latency
+// (oversampling), setDryDelay() delays the input by the same amount so dry and processed stay
+// sample aligned. The effect keeps running while bypassed, so un-bypassing is click-free too.
 class FF360_DSP_OutputStage {
 public:
     struct Settings {
@@ -37,6 +37,14 @@ public:
         reset();
     }
 
+    // Latency of the effect in samples; call while audio isn't running (prepare / suspended)
+    void setDryDelay(size_t samples) {
+        m_dryDelay = std::min(samples, kMaxDryDelay);
+        std::fill(m_ringL.begin(), m_ringL.end(), 0.0f);
+        std::fill(m_ringR.begin(), m_ringR.end(), 0.0f);
+        m_ringWrite = 0;
+    }
+
     void reset() {
         m_dryMs = m_wetMs = 0.0f;
         m_autoTargetDb = m_autoDb = 0.0f;
@@ -51,8 +59,19 @@ public:
             m_dryL.resize(numSamples);
             m_dryR.resize(numSamples);
         }
-        std::copy(left, left + numSamples, m_dryL.begin());
-        std::copy(right, right + numSamples, m_dryR.begin());
+        if (m_dryDelay == 0) {
+            std::copy(left, left + numSamples, m_dryL.begin());
+            std::copy(right, right + numSamples, m_dryR.begin());
+        } else {
+            for (size_t i = 0; i < numSamples; ++i) {
+                m_ringL[m_ringWrite] = left[i];
+                m_ringR[m_ringWrite] = right[i];
+                const size_t read = (m_ringWrite + kRingSize - m_dryDelay) & (kRingSize - 1);
+                m_dryL[i] = m_ringL[read];
+                m_dryR[i] = m_ringR[read];
+                m_ringWrite = (m_ringWrite + 1) & (kRingSize - 1);
+            }
+        }
         m_dryCount = numSamples;
     }
 
@@ -118,10 +137,14 @@ private:
     static constexpr float kAutoGlideSec = 0.050f; // how fast the applied gain follows its target
     static constexpr float kMaxAutoDb = 12.0f;
     static constexpr float kSilenceMs = 1.0e-6f;   // -60 dBFS RMS
+    static constexpr size_t kRingSize = 4096;      // power of two
+    static constexpr size_t kMaxDryDelay = kRingSize - 1;
 
     float m_sampleRate = 44100.0f;
     std::vector<float> m_dryL, m_dryR;
     size_t m_dryCount = 0;
+    std::vector<float> m_ringL = std::vector<float>(kRingSize, 0.0f), m_ringR = std::vector<float>(kRingSize, 0.0f);
+    size_t m_ringWrite = 0, m_dryDelay = 0;
 
     float m_dryMs = 0.0f, m_wetMs = 0.0f;
     float m_autoTargetDb = 0.0f, m_autoDb = 0.0f;

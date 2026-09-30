@@ -61,8 +61,9 @@ VHSPluginEditor::VHSPluginEditor(VHSPluginProcessor& p)
     m_modeLabel.setFont(juce::Font(10.0f, juce::Font::bold));
     m_modeLabel.setColour(juce::Label::textColourId, juce::Colour(ff360_ui::Colors::MetallicGold));
     
-    addAndMakeVisible(m_modePrevButton);
-    addAndMakeVisible(m_modeNextButton);
+    // Hidden until tape modes exist (the arrows had no function); addAndMakeVisible to bring them back
+    addChildComponent(m_modePrevButton);
+    addChildComponent(m_modeNextButton);
     addAndMakeVisible(m_modeLabel);
 
     // Mix Slider

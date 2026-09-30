@@ -9,8 +9,10 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "ff360_ui/PresetManager.h"
 #include "ff360_ui/OutputStrip.h"
+#include "ff360_ui/Oversampler.h"
 
-class CyberpunkGlitchProcessor : public juce::AudioProcessor {
+class CyberpunkGlitchProcessor : public juce::AudioProcessor,
+                                private juce::AsyncUpdater {
 public:
     CyberpunkGlitchProcessor();
     ~CyberpunkGlitchProcessor() override = default;
@@ -54,6 +56,15 @@ private:
     ff360::FF360_DSP_ParameterManager m_paramManager;
     ff360::FF360_DSP_MeteringBridge m_meteringBridge;
     ff360::FF360_DSP_OutputStage m_outputStage; // auto gain, output trim, bypass
+    ff360_ui::Oversampler m_oversampler;        // runs the engine at 2x / 4x
+    double m_baseRate = 44100.0;
+    int m_maxBlock = 512;
+    std::vector<float> m_scUpL, m_scUpR; // sidechain at the oversampled rate
+
+    // Re-prepares the engine at the oversampled rate and reports the new latency.
+    // Only while audio isn't running: from prepareToPlay, or suspended (handleAsyncUpdate).
+    void applyOversampling(int order);
+    void handleAsyncUpdate() override;
 
     // Undo/redo, A/B and the preset menu. Owned here (not by the editor) so they survive
     // closing the plugin window; declared after m_apvts, which they use.
