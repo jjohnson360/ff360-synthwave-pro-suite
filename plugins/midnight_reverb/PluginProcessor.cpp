@@ -56,7 +56,8 @@ MidnightReverbProcessor::MidnightReverbProcessor()
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)
                      .withInput("Sidechain", juce::AudioChannelSet::stereo(), false)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
-      m_presets(ff360::getMidnightReverbPresets()) {
+      m_history(*this, {}, {}),
+      m_presetManager(m_apvts, m_history, "Midnight Reverb", ff360::getMidnightReverbPresets(), {}) {
 }
 
 bool MidnightReverbProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
@@ -132,30 +133,18 @@ juce::AudioProcessorEditor* MidnightReverbProcessor::createEditor() {
     return new MidnightReverbEditor(*this);
 }
 
-int MidnightReverbProcessor::getNumPrograms() { return static_cast<int>(m_presets.size()); }
-int MidnightReverbProcessor::getCurrentProgram() { return m_currentPresetIndex; }
-void MidnightReverbProcessor::setCurrentProgram(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) {
-        m_currentPresetIndex = index;
-        m_paramManager.importFromJson(m_presets[index].jsonContent);
-        for (const auto& desc : m_paramManager.getDescriptors()) {
-            if (auto* p = m_apvts.getParameter(desc.id)) {
-                p->setValueNotifyingHost(m_paramManager.getNormalizedValue(desc.id));
-            }
-        }
-    }
-}
-const juce::String MidnightReverbProcessor::getProgramName(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) return m_presets[index].name;
-    return {};
-}
-void MidnightReverbProcessor::changeProgramName(int index, const juce::String& newName) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) m_presets[index].name = newName.toStdString();
-}
+// Presets live in the plugin's own menu (ff360_ui::WorkflowBar); the host sees a single program
+int MidnightReverbProcessor::getNumPrograms() { return 1; }
+int MidnightReverbProcessor::getCurrentProgram() { return 0; }
+void MidnightReverbProcessor::setCurrentProgram(int) {}
+const juce::String MidnightReverbProcessor::getProgramName(int) { return m_presetManager.getCurrentName(); }
+void MidnightReverbProcessor::changeProgramName(int, const juce::String&) {}
 
 void MidnightReverbProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = m_apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
+    m_history.writeState(*xml);
+    m_presetManager.writeState(*xml);
     copyXmlToBinary(*xml, destData);
 }
 
@@ -163,6 +152,8 @@ void MidnightReverbProcessor::setStateInformation(const void* data, int sizeInBy
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
     if (xmlState && xmlState->hasTagName(m_apvts.state.getType())) {
         m_apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+        m_history.readState(*xmlState);
+        m_presetManager.readState(*xmlState);
     }
 }
 

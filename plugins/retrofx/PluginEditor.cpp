@@ -3,9 +3,13 @@
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 
 RetroFXEditor::RetroFXEditor(RetroFXProcessor& p)
-    : AudioProcessorEditor(&p), m_processor(p)
+    : AudioProcessorEditor(&p), m_processor(p),
+      m_workflowBar(p.getHistory(), p.getPresetManager())
 {
     setLookAndFeel(&m_lookAndFeel);
+
+    addAndMakeVisible(m_workflowBar);
+    m_workflowBar.attachKeyboardShortcuts(*this);
 
     addAndMakeVisible(m_mainPanel);
     addAndMakeVisible(m_scene);
@@ -60,7 +64,7 @@ RetroFXEditor::RetroFXEditor(RetroFXProcessor& p)
     m_generateBtn.setButtonText("GENERATE FX");
     addAndMakeVisible(m_generateBtn);
 
-    setSize(350, 640);
+    setSize(350, 676);
 }
 
 RetroFXEditor::~RetroFXEditor() {
@@ -109,6 +113,9 @@ void RetroFXEditor::paint(juce::Graphics& g) {
 void RetroFXEditor::resized() {
     auto bounds = getLocalBounds().reduced(16);
     bounds.removeFromTop(24);
+    bounds.removeFromTop(4);
+    m_workflowBar.setBounds(bounds.removeFromTop(26));
+    bounds.removeFromTop(6);
     
     m_mainPanel.setBounds(bounds);
     auto inner = bounds.reduced(14);

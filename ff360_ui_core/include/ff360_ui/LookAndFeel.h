@@ -30,6 +30,27 @@ public:
         
         setColour(juce::ToggleButton::textColourId, juce::Colour(Colors::TextDim));
         setColour(juce::ToggleButton::tickColourId, juce::Colour(Colors::AccessibleSky));
+
+        // Preset menu, tooltips and the Save / Delete preset dialogs
+        setColour(juce::PopupMenu::backgroundColourId, juce::Colour(Colors::MatteCharcoal));
+        setColour(juce::PopupMenu::textColourId, juce::Colour(Colors::TextOffWhite));
+        setColour(juce::PopupMenu::headerTextColourId, juce::Colour(Colors::MetallicGold));
+        setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(Colors::MetallicGold).withAlpha(0.18f));
+        setColour(juce::PopupMenu::highlightedTextColourId, juce::Colour(Colors::TextOffWhite));
+
+        setColour(juce::TooltipWindow::backgroundColourId, juce::Colour(Colors::DeepBlack));
+        setColour(juce::TooltipWindow::textColourId, juce::Colour(Colors::TextOffWhite));
+        setColour(juce::TooltipWindow::outlineColourId, juce::Colour(Colors::MetallicGold).withAlpha(0.4f));
+
+        setColour(juce::AlertWindow::backgroundColourId, juce::Colour(Colors::MatteCharcoal));
+        setColour(juce::AlertWindow::textColourId, juce::Colour(Colors::TextOffWhite));
+        setColour(juce::AlertWindow::outlineColourId, juce::Colour(Colors::MetallicGold).withAlpha(0.4f));
+        setColour(juce::TextEditor::backgroundColourId, juce::Colour(Colors::DeepBlack));
+        setColour(juce::TextEditor::textColourId, juce::Colour(Colors::TextOffWhite));
+        setColour(juce::TextEditor::outlineColourId, juce::Colour(Colors::MetallicGold).withAlpha(0.3f));
+        setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(Colors::MetallicGold));
+        setColour(juce::TextEditor::highlightColourId, juce::Colour(Colors::MetallicGold).withAlpha(0.3f));
+        setColour(juce::CaretComponent::caretColourId, juce::Colour(Colors::MetallicGold));
     }
 
     void drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,

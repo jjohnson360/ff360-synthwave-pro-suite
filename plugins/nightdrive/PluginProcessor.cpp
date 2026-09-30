@@ -59,7 +59,8 @@ NightDriveProcessor::NightDriveProcessor()
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)
                      .withInput("Sidechain", juce::AudioChannelSet::stereo(), false)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
-      m_presets(ff360::getNightDrivePresets()) {
+      m_history(*this, {}, {}),
+      m_presetManager(m_apvts, m_history, "NightDrive", ff360::getNightDrivePresets(), {}) {
     updateScaleNotes(1); // Natural Minor default
 }
 
@@ -275,30 +276,18 @@ juce::AudioProcessorEditor* NightDriveProcessor::createEditor() {
     return new NightDriveEditor(*this);
 }
 
-int NightDriveProcessor::getNumPrograms() { return static_cast<int>(m_presets.size()); }
-int NightDriveProcessor::getCurrentProgram() { return m_currentPresetIndex; }
-void NightDriveProcessor::setCurrentProgram(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) {
-        m_currentPresetIndex = index;
-        m_paramManager.importFromJson(m_presets[index].jsonContent);
-        for (const auto& desc : m_paramManager.getDescriptors()) {
-            if (auto* p = m_apvts.getParameter(desc.id)) {
-                p->setValueNotifyingHost(m_paramManager.getNormalizedValue(desc.id));
-            }
-        }
-    }
-}
-const juce::String NightDriveProcessor::getProgramName(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) return m_presets[index].name;
-    return {};
-}
-void NightDriveProcessor::changeProgramName(int index, const juce::String& newName) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) m_presets[index].name = newName.toStdString();
-}
+// Presets live in the plugin's own menu (ff360_ui::WorkflowBar); the host sees a single program
+int NightDriveProcessor::getNumPrograms() { return 1; }
+int NightDriveProcessor::getCurrentProgram() { return 0; }
+void NightDriveProcessor::setCurrentProgram(int) {}
+const juce::String NightDriveProcessor::getProgramName(int) { return m_presetManager.getCurrentName(); }
+void NightDriveProcessor::changeProgramName(int, const juce::String&) {}
 
 void NightDriveProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = m_apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
+    m_history.writeState(*xml);
+    m_presetManager.writeState(*xml);
     copyXmlToBinary(*xml, destData);
 }
 
@@ -306,6 +295,8 @@ void NightDriveProcessor::setStateInformation(const void* data, int sizeInBytes)
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
     if (xmlState && xmlState->hasTagName(m_apvts.state.getType())) {
         m_apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+        m_history.readState(*xmlState);
+        m_presetManager.readState(*xmlState);
     }
 }
 

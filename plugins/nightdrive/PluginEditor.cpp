@@ -3,9 +3,13 @@
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 
 NightDriveEditor::NightDriveEditor(NightDriveProcessor& p)
-    : AudioProcessorEditor(&p), m_processor(p)
+    : AudioProcessorEditor(&p), m_processor(p),
+      m_workflowBar(p.getHistory(), p.getPresetManager())
 {
     setLookAndFeel(&m_lookAndFeel);
+
+    addAndMakeVisible(m_workflowBar);
+    m_workflowBar.attachKeyboardShortcuts(*this);
 
     addAndMakeVisible(m_mainPanel);
     addAndMakeVisible(m_scene);
@@ -90,7 +94,7 @@ NightDriveEditor::NightDriveEditor(NightDriveProcessor& p)
         m_processor.getApvts(), "scalelock", m_scaleBox);
     addAndMakeVisible(m_scaleBox);
 
-    setSize(350, 640);
+    setSize(350, 676);
 }
 
 NightDriveEditor::~NightDriveEditor() {
@@ -140,6 +144,9 @@ void NightDriveEditor::paint(juce::Graphics& g) {
 void NightDriveEditor::resized() {
     auto bounds = getLocalBounds().reduced(16);
     bounds.removeFromTop(24);
+    bounds.removeFromTop(4);
+    m_workflowBar.setBounds(bounds.removeFromTop(26));
+    bounds.removeFromTop(6);
     
     m_mainPanel.setBounds(bounds);
     auto inner = bounds.reduced(14);

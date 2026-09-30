@@ -3,9 +3,13 @@
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 
 MidnightReverbEditor::MidnightReverbEditor(MidnightReverbProcessor& p)
-    : AudioProcessorEditor(&p), m_processor(p)
+    : AudioProcessorEditor(&p), m_processor(p),
+      m_workflowBar(p.getHistory(), p.getPresetManager())
 {
     setLookAndFeel(&m_lookAndFeel);
+
+    addAndMakeVisible(m_workflowBar);
+    m_workflowBar.attachKeyboardShortcuts(*this);
 
     // Main Panel
     addAndMakeVisible(m_mainPanel);
@@ -49,7 +53,7 @@ MidnightReverbEditor::MidnightReverbEditor(MidnightReverbProcessor& p)
         m_processor.getApvts(), "synctoggle", m_syncButton);
     addAndMakeVisible(m_syncButton);
 
-    setSize(350, 640);
+    setSize(350, 676);
 }
 
 MidnightReverbEditor::~MidnightReverbEditor() {
@@ -115,6 +119,9 @@ void MidnightReverbEditor::paint(juce::Graphics& g) {
 void MidnightReverbEditor::resized() {
     auto bounds = getLocalBounds().reduced(16);
     bounds.removeFromTop(24);
+    bounds.removeFromTop(4);
+    m_workflowBar.setBounds(bounds.removeFromTop(26));
+    bounds.removeFromTop(6);
     
     m_mainPanel.setBounds(bounds);
     auto inner = bounds.reduced(14);

@@ -47,7 +47,8 @@ RetroFXProcessor::RetroFXProcessor()
                      .withInput("Input", juce::AudioChannelSet::stereo(), true)
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
-      m_presets(ff360::getRetroFXPresets()) {
+      m_history(*this, {}, {}),
+      m_presetManager(m_apvts, m_history, "RetroFX", ff360::getRetroFXPresets(), {}) {
     setupGenerators();
 }
 
@@ -130,30 +131,18 @@ juce::AudioProcessorEditor* RetroFXProcessor::createEditor() {
     return new RetroFXEditor(*this);
 }
 
-int RetroFXProcessor::getNumPrograms() { return static_cast<int>(m_presets.size()); }
-int RetroFXProcessor::getCurrentProgram() { return m_currentPresetIndex; }
-void RetroFXProcessor::setCurrentProgram(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) {
-        m_currentPresetIndex = index;
-        m_paramManager.importFromJson(m_presets[index].jsonContent);
-        for (const auto& desc : m_paramManager.getDescriptors()) {
-            if (auto* p = m_apvts.getParameter(desc.id)) {
-                p->setValueNotifyingHost(m_paramManager.getNormalizedValue(desc.id));
-            }
-        }
-    }
-}
-const juce::String RetroFXProcessor::getProgramName(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) return m_presets[index].name;
-    return {};
-}
-void RetroFXProcessor::changeProgramName(int index, const juce::String& newName) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) m_presets[index].name = newName.toStdString();
-}
+// Presets live in the plugin's own menu (ff360_ui::WorkflowBar); the host sees a single program
+int RetroFXProcessor::getNumPrograms() { return 1; }
+int RetroFXProcessor::getCurrentProgram() { return 0; }
+void RetroFXProcessor::setCurrentProgram(int) {}
+const juce::String RetroFXProcessor::getProgramName(int) { return m_presetManager.getCurrentName(); }
+void RetroFXProcessor::changeProgramName(int, const juce::String&) {}
 
 void RetroFXProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = m_apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
+    m_history.writeState(*xml);
+    m_presetManager.writeState(*xml);
     copyXmlToBinary(*xml, destData);
 }
 
@@ -161,6 +150,8 @@ void RetroFXProcessor::setStateInformation(const void* data, int sizeInBytes) {
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
     if (xmlState && xmlState->hasTagName(m_apvts.state.getType())) {
         m_apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+        m_history.readState(*xmlState);
+        m_presetManager.readState(*xmlState);
     }
 }
 

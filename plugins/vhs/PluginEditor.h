@@ -3,6 +3,7 @@
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 #include "PluginProcessor.h"
 #include "ff360_ui/LookAndFeel.h"
+#include "ff360_ui/WorkflowBar.h"
 #include "ff360_ui/HeroKnob.h"
 #include "ff360_ui/GlassPanel.h"
 #include "ff360_ui/MeterView.h"
@@ -19,11 +20,14 @@ public:
 private:
     VHSPluginProcessor& m_processor;
     ff360_ui::FF360_LookAndFeel m_lookAndFeel;
+    ff360_ui::WorkflowBar m_workflowBar; // undo/redo, presets, A/B
+    juce::TooltipWindow m_tooltips { this, 600 };
 
     ff360_ui::FF360_GlassPanel m_mainPanel;
     ff360_ui::VHSScene m_scene;
 
     std::unique_ptr<ff360_ui::FF360_HeroKnob> m_degradeKnob;
+    std::unique_ptr<juce::ParameterAttachment> m_degradeAttach;
     juce::Label m_ff360Label;
 
     struct KnobControl {

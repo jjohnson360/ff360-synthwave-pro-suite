@@ -56,7 +56,8 @@ CyberpunkGlitchProcessor::CyberpunkGlitchProcessor()
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)
                      .withInput("Sidechain", juce::AudioChannelSet::stereo(), false)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
-      m_presets(ff360::getCyberpunkGlitchPresets()) {
+      m_history(*this, {}, {}),
+      m_presetManager(m_apvts, m_history, "Cyberpunk Glitch", ff360::getCyberpunkGlitchPresets(), {}) {
 }
 
 bool CyberpunkGlitchProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
@@ -133,30 +134,18 @@ juce::AudioProcessorEditor* CyberpunkGlitchProcessor::createEditor() {
     return new CyberpunkGlitchEditor(*this);
 }
 
-int CyberpunkGlitchProcessor::getNumPrograms() { return static_cast<int>(m_presets.size()); }
-int CyberpunkGlitchProcessor::getCurrentProgram() { return m_currentPresetIndex; }
-void CyberpunkGlitchProcessor::setCurrentProgram(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) {
-        m_currentPresetIndex = index;
-        m_paramManager.importFromJson(m_presets[index].jsonContent);
-        for (const auto& desc : m_paramManager.getDescriptors()) {
-            if (auto* p = m_apvts.getParameter(desc.id)) {
-                p->setValueNotifyingHost(m_paramManager.getNormalizedValue(desc.id));
-            }
-        }
-    }
-}
-const juce::String CyberpunkGlitchProcessor::getProgramName(int index) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) return m_presets[index].name;
-    return {};
-}
-void CyberpunkGlitchProcessor::changeProgramName(int index, const juce::String& newName) {
-    if (index >= 0 && index < static_cast<int>(m_presets.size())) m_presets[index].name = newName.toStdString();
-}
+// Presets live in the plugin's own menu (ff360_ui::WorkflowBar); the host sees a single program
+int CyberpunkGlitchProcessor::getNumPrograms() { return 1; }
+int CyberpunkGlitchProcessor::getCurrentProgram() { return 0; }
+void CyberpunkGlitchProcessor::setCurrentProgram(int) {}
+const juce::String CyberpunkGlitchProcessor::getProgramName(int) { return m_presetManager.getCurrentName(); }
+void CyberpunkGlitchProcessor::changeProgramName(int, const juce::String&) {}
 
 void CyberpunkGlitchProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = m_apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
+    m_history.writeState(*xml);
+    m_presetManager.writeState(*xml);
     copyXmlToBinary(*xml, destData);
 }
 
@@ -164,6 +153,8 @@ void CyberpunkGlitchProcessor::setStateInformation(const void* data, int sizeInB
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
     if (xmlState && xmlState->hasTagName(m_apvts.state.getType())) {
         m_apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+        m_history.readState(*xmlState);
+        m_presetManager.readState(*xmlState);
     }
 }
 

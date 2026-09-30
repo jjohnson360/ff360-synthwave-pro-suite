@@ -27,6 +27,10 @@ public:
 
     std::function<void(float)> onValueChanged;
 
+    // Edit gesture around a drag or wheel step, for host automation recording and undo
+    std::function<void()> onDragStart;
+    std::function<void()> onDragEnd;
+
     void paint(juce::Graphics& g) override {
         const auto bounds = getLocalBounds().toFloat();
         const float size = std::min(bounds.getWidth(), bounds.getHeight() - 28.0f);
@@ -84,6 +88,11 @@ public:
     void mouseDown(const juce::MouseEvent& e) override {
         m_dragStartVal = m_value;
         m_dragStartY = e.position.y;
+        if (onDragStart) onDragStart();
+    }
+
+    void mouseUp(const juce::MouseEvent&) override {
+        if (onDragEnd) onDragEnd();
     }
 
     void mouseDrag(const juce::MouseEvent& e) override {
@@ -93,7 +102,9 @@ public:
     }
 
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) override {
+        if (onDragStart) onDragStart();
         setValue(m_value + wheel.deltaY * 0.05f);
+        if (onDragEnd) onDragEnd();
     }
 
 private:

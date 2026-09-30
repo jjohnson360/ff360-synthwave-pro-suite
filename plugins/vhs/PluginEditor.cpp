@@ -3,9 +3,13 @@
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 
 VHSPluginEditor::VHSPluginEditor(VHSPluginProcessor& p)
-    : AudioProcessorEditor(&p), m_processor(p)
+    : AudioProcessorEditor(&p), m_processor(p),
+      m_workflowBar(p.getHistory(), p.getPresetManager())
 {
     setLookAndFeel(&m_lookAndFeel);
+
+    addAndMakeVisible(m_workflowBar);
+    m_workflowBar.attachKeyboardShortcuts(*this);
 
     // Main Panel
     addAndMakeVisible(m_mainPanel);
@@ -15,14 +19,17 @@ VHSPluginEditor::VHSPluginEditor(VHSPluginProcessor& p)
 
     // Hero Knob
     m_degradeKnob = std::make_unique<ff360_ui::FF360_HeroKnob>("DEGRADE");
-    if (auto* param = m_processor.getApvts().getRawParameterValue("degrade")) {
-        m_degradeKnob->setValue(param->load() * 0.01f, juce::dontSendNotification);
+    if (auto* param = m_processor.getApvts().getParameter("degrade")) {
+        // Two-way link: the knob follows presets, undo, A/B and automation, and its drags are
+        // proper edit gestures (so hosts record them and undo sees them)
+        m_degradeAttach = std::make_unique<juce::ParameterAttachment>(*param, [this](float plain) {
+            m_degradeKnob->setValue(plain * 0.01f, juce::dontSendNotification);
+        });
+        m_degradeKnob->onDragStart = [this] { m_degradeAttach->beginGesture(); };
+        m_degradeKnob->onDragEnd = [this] { m_degradeAttach->endGesture(); };
+        m_degradeKnob->onValueChanged = [this](float val) { m_degradeAttach->setValueAsPartOfGesture(val * 100.0f); };
+        m_degradeAttach->sendInitialUpdate();
     }
-    m_degradeKnob->onValueChanged = [this](float val) {
-        if (auto* param = m_processor.getApvts().getParameter("degrade")) {
-            param->setValueNotifyingHost(val);
-        }
-    };
     addAndMakeVisible(m_degradeKnob.get());
 
     m_ff360Label.setText("ff360_labs", juce::dontSendNotification);
@@ -38,11 +45,11 @@ VHSPluginEditor::VHSPluginEditor(VHSPluginProcessor& p)
     createKnob("hiss", "Hiss");
     createKnob("dropouts", "Dropouts");
     
-    createKnob("saturation", "Saturate");
+    createKnob("sat", "Saturate");
     createKnob("bitcrush", "Bit Red.");
-    createKnob("hpf", "HF Rolloff");
-    createKnob("stereo_drift", "St. Drift");
-    createKnob("pitch_drift", "Pitch Drift");
+    createKnob("hfloss", "HF Rolloff");
+    createKnob("stereodrift", "St. Drift");
+    createKnob("drift", "Pitch Drift");
 
     // Mode Selector (dummy buttons for now)
     m_modePrevButton.setButtonText("<");
@@ -74,7 +81,7 @@ VHSPluginEditor::VHSPluginEditor(VHSPluginProcessor& p)
     addAndMakeVisible(m_mixLabel);
     addAndMakeVisible(m_mixValueLabel);
 
-    setSize(350, 640);
+    setSize(350, 676);
 }
 
 VHSPluginEditor::~VHSPluginEditor() {
@@ -123,6 +130,9 @@ void VHSPluginEditor::paint(juce::Graphics& g) {
 void VHSPluginEditor::resized() {
     auto bounds = getLocalBounds().reduced(16);
     bounds.removeFromTop(24); // header space
+    bounds.removeFromTop(4);
+    m_workflowBar.setBounds(bounds.removeFromTop(26));
+    bounds.removeFromTop(6);
     
     m_mainPanel.setBounds(bounds);
     auto inner = bounds.reduced(14);
@@ -153,7 +163,7 @@ void VHSPluginEditor::resized() {
     
     inner.removeFromTop(12);
     auto row2 = inner.removeFromTop(60);
-    const char* r2[] = {"saturation", "bitcrush", "hpf", "stereo_drift", "pitch_drift"};
+    const char* r2[] = {"sat", "bitcrush", "hfloss", "stereodrift", "drift"};
     for (int i = 0; i < 5; ++i) {
         auto& k = m_knobs[r2[i]];
         k.slider.setBounds(row2.getX() + i * (knobW + spacing), row2.getY(), knobW, knobH);

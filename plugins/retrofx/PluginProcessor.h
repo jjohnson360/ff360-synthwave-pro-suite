@@ -8,6 +8,7 @@
 
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "ff360_ui/PresetManager.h"
 
 class RetroFXProcessor : public juce::AudioProcessor {
 public:
@@ -37,6 +38,8 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState& getApvts() { return m_apvts; }
+    ff360_ui::EditHistory& getHistory() { return m_history; }
+    ff360_ui::PresetManager& getPresetManager() { return m_presetManager; }
     ff360::FF360_DSP_GenerativeEngine& getGenEngine() { return m_genEngine; }
     ff360::FF360_DSP_MeteringBridge& getMeteringBridge() { return m_meteringBridge; }
 
@@ -50,8 +53,10 @@ private:
     ff360::FF360_DSP_ParameterManager m_paramManager;
     ff360::FF360_DSP_MeteringBridge m_meteringBridge;
 
-    std::vector<ff360::Preset> m_presets;
-    int m_currentPresetIndex = 0;
+    // Undo/redo, A/B and the preset menu. Owned here (not by the editor) so they survive
+    // closing the plugin window; declared after m_apvts, which they use.
+    ff360_ui::EditHistory m_history;
+    ff360_ui::PresetManager m_presetManager;
 
     void setupGenerators();
 

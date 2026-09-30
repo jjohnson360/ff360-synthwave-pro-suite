@@ -3,9 +3,13 @@
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 
 NeonWidthEditor::NeonWidthEditor(NeonWidthProcessor& p)
-    : AudioProcessorEditor(&p), m_processor(p)
+    : AudioProcessorEditor(&p), m_processor(p),
+      m_workflowBar(p.getHistory(), p.getPresetManager())
 {
     setLookAndFeel(&m_lookAndFeel);
+
+    addAndMakeVisible(m_workflowBar);
+    m_workflowBar.attachKeyboardShortcuts(*this);
 
     addAndMakeVisible(m_mainPanel);
     addAndMakeVisible(m_scope);
@@ -38,7 +42,7 @@ NeonWidthEditor::NeonWidthEditor(NeonWidthProcessor& p)
     addAndMakeVisible(m_bassMonoLabel);
     addAndMakeVisible(m_bassMonoValueLabel);
 
-    setSize(350, 640);
+    setSize(350, 676);
     startTimerHz(30);
 }
 
@@ -115,6 +119,9 @@ void NeonWidthEditor::paint(juce::Graphics& g) {
 void NeonWidthEditor::resized() {
     auto bounds = getLocalBounds().reduced(16);
     bounds.removeFromTop(24);
+    bounds.removeFromTop(4);
+    m_workflowBar.setBounds(bounds.removeFromTop(26));
+    bounds.removeFromTop(6);
     
     m_mainPanel.setBounds(bounds);
     auto inner = bounds.reduced(14);
