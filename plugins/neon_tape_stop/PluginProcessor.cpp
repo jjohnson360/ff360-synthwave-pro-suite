@@ -35,6 +35,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout NeonTapeStopProcessor::creat
         juce::ParameterID{ "mix", 1 }, "Mix", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
+    // Output trim, bypass (ff360::FF360_DSP_OutputStage)
+    ff360_ui::output::addParameters(params, false);
+
     return { params.begin(), params.end() };
 }
 
@@ -43,11 +46,12 @@ NeonTapeStopProcessor::NeonTapeStopProcessor()
                      .withInput("Input", juce::AudioChannelSet::stereo(), true)
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
-      m_history(*this, {}, { "trigger" }),
-      m_presetManager(m_apvts, m_history, "Neon Tape Stop", ff360::getNeonTapeStopPresets(), { "trigger" }) {
+      m_history(*this, {}, { "trigger", "bypass" }),
+      m_presetManager(m_apvts, m_history, "Neon Tape Stop", ff360::getNeonTapeStopPresets(), { "trigger", "bypass" }) {
 }
 
 void NeonTapeStopProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
+    m_outputStage.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_tapeEngine.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_controller.prepare(sampleRate);
     m_meteringBridge.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
@@ -66,6 +70,9 @@ void NeonTapeStopProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     const int numChannels = buffer.getNumChannels();
 
     if (numChannels == 0 || numSamples == 0) return;
+
+    // Keep the input for bypass and auto gain
+    m_outputStage.captureDry(buffer.getReadPointer(0), buffer.getReadPointer(numChannels > 1 ? 1 : 0), static_cast<size_t>(numSamples));
 
     // Check MIDI triggers (NoteOn triggers stop, NoteOff triggers recovery)
     for (const auto metadata : midiMessages) {
@@ -101,6 +108,7 @@ void NeonTapeStopProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce:
     float* right = (numChannels > 1) ? buffer.getWritePointer(1) : buffer.getWritePointer(0);
 
     m_tapeEngine.processStereo(left, right, static_cast<size_t>(numSamples));
+    m_outputStage.process(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readSettings(m_apvts));
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
 }
 

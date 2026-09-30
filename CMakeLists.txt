@@ -170,5 +170,6 @@ if(FF360_BUILD_WORKFLOW_TESTS)
     target_compile_definitions(ff360_workflow_tests PRIVATE
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
+        JUCE_DISPLAY_SPLASH_SCREEN=0 # JUCE 7's splash covers the editor snapshots
     )
 endif()

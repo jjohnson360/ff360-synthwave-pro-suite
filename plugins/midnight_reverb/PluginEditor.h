@@ -4,6 +4,7 @@
 #include "PluginProcessor.h"
 #include "ff360_ui/LookAndFeel.h"
 #include "ff360_ui/WorkflowBar.h"
+#include "ff360_ui/OutputStrip.h"
 #include "ff360_ui/GlassPanel.h"
 #include "ff360_ui/Scenes.h"
 #include "ff360_ui/HeroKnob.h"
@@ -21,6 +22,7 @@ private:
     ff360_ui::FF360_LookAndFeel m_lookAndFeel;
     ff360_ui::WorkflowBar m_workflowBar; // undo/redo, presets, A/B
     juce::TooltipWindow m_tooltips { this, 600 };
+    ff360_ui::OutputStrip m_outputStrip; // bypass, output trim, auto gain
 
     ff360_ui::FF360_GlassPanel m_mainPanel;
     // We will use a generic scene or add TunnelScene later, for now BaseScene with custom paint

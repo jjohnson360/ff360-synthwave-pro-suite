@@ -47,6 +47,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout CyberpunkGlitchProcessor::cr
         juce::ParameterID{ "scsensitivity", 1 }, "Sidechain Trigger", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 0.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
+    // Output trim, auto gain and bypass (ff360::FF360_DSP_OutputStage)
+    ff360_ui::output::addParameters(params, true);
+
     return { params.begin(), params.end() };
 }
 
@@ -56,8 +59,8 @@ CyberpunkGlitchProcessor::CyberpunkGlitchProcessor()
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)
                      .withInput("Sidechain", juce::AudioChannelSet::stereo(), false)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
-      m_history(*this, {}, {}),
-      m_presetManager(m_apvts, m_history, "Cyberpunk Glitch", ff360::getCyberpunkGlitchPresets(), {}) {
+      m_history(*this, {}, { "bypass" }),
+      m_presetManager(m_apvts, m_history, "Cyberpunk Glitch", ff360::getCyberpunkGlitchPresets(), { "bypass" }) {
 }
 
 bool CyberpunkGlitchProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
@@ -70,6 +73,7 @@ bool CyberpunkGlitchProcessor::isBusesLayoutSupported(const BusesLayout& layouts
 }
 
 void CyberpunkGlitchProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
+    m_outputStage.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_glitchEngine.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_meteringBridge.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_paramManager.prepare(sampleRate);
@@ -86,6 +90,9 @@ void CyberpunkGlitchProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     const int numChannels = buffer.getNumChannels();
 
     if (numChannels == 0 || numSamples == 0) return;
+
+    // Keep the input for bypass and auto gain
+    m_outputStage.captureDry(buffer.getReadPointer(0), buffer.getReadPointer(numChannels > 1 ? 1 : 0), static_cast<size_t>(numSamples));
 
     // Read host tempo if available
     float currentBpm = 120.0f;
@@ -127,6 +134,7 @@ void CyberpunkGlitchProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     }
 
     m_glitchEngine.processStereo(left, right, static_cast<size_t>(numSamples), scLeft, scRight);
+    m_outputStage.process(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readSettings(m_apvts));
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
 }
 

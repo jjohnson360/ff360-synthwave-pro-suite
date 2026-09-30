@@ -1,0 +1,132 @@
+#pragma once
+
+#include "DesignTokens.h"
+
+#if __has_include(<juce_gui_basics/juce_gui_basics.h>)
+#include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_audio_processors/juce_audio_processors.h>
+#include "ff360/OutputStage.h"
+
+namespace ff360_ui {
+
+// Parameters for ff360::FF360_DSP_OutputStage, shared by every Synthwave plugin
+namespace output {
+
+inline constexpr const char* outGainId = "outGain";
+inline constexpr const char* autoGainId = "autoGain";
+inline constexpr const char* bypassId = "bypass";
+
+// withAutoGain: false for plugins where matching loudness would fight the effect itself
+// (generators, tape stop). withOutGain: false when the plugin already has an "outGain" (VHS).
+inline void addParameters(std::vector<std::unique_ptr<juce::RangedAudioParameter>>& params,
+                          bool withAutoGain, bool withOutGain = true) {
+    if (withOutGain)
+        params.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID{ outGainId, 1 }, "Output", juce::NormalisableRange<float>(-24.0f, 24.0f, 0.1f), 0.0f,
+            juce::AudioParameterFloatAttributes().withLabel("dB")));
+    if (withAutoGain)
+        params.push_back(std::make_unique<juce::AudioParameterBool>(
+            juce::ParameterID{ autoGainId, 1 }, "Auto Gain", false));
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ bypassId, 1 }, "Bypass", false));
+}
+
+inline ff360::FF360_DSP_OutputStage::Settings readSettings(const juce::AudioProcessorValueTreeState& apvts) {
+    ff360::FF360_DSP_OutputStage::Settings s;
+    if (auto* v = apvts.getRawParameterValue(outGainId)) s.outputGainDb = v->load();
+    if (auto* v = apvts.getRawParameterValue(autoGainId)) s.autoGain = v->load() > 0.5f;
+    if (auto* v = apvts.getRawParameterValue(bypassId)) s.bypass = v->load() > 0.5f;
+    return s;
+}
+
+} // namespace output
+
+// Footer row: [BYPASS]  OUT ────●──── +0.0 dB  [AUTO]
+// AUTO shows the correction it's applying while on. Double-click the slider for 0 dB.
+class OutputStrip : public juce::Component, private juce::Timer {
+public:
+    OutputStrip(juce::AudioProcessorValueTreeState& apvts, const ff360::FF360_DSP_OutputStage& stage)
+        : m_stage(stage) {
+        using Apvts = juce::AudioProcessorValueTreeState;
+
+        m_bypass.setButtonText("BYPASS");
+        m_bypass.setColour(juce::ToggleButton::tickColourId, juce::Colour(Colors::WarmAmberRed));
+        m_bypass.setTooltip("Bypass the effect (10 ms crossfade to the input)");
+        m_bypassAttach = std::make_unique<Apvts::ButtonAttachment>(apvts, output::bypassId, m_bypass);
+        addAndMakeVisible(m_bypass);
+
+        m_label.setText("OUT", juce::dontSendNotification);
+        m_label.setFont(juce::Font(9.0f, juce::Font::bold));
+        m_label.setColour(juce::Label::textColourId, juce::Colour(Colors::TextDim));
+        addAndMakeVisible(m_label);
+
+        m_gain.setSliderStyle(juce::Slider::LinearHorizontal);
+        m_gain.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        m_gain.setTooltip("Output level. Double-click for 0 dB.");
+        m_gainAttach = std::make_unique<Apvts::SliderAttachment>(apvts, output::outGainId, m_gain);
+        m_gain.setDoubleClickReturnValue(true, 0.0);
+        m_gain.onValueChange = [this] { updateGainText(); };
+        addAndMakeVisible(m_gain);
+
+        m_gainValue.setFont(juce::Font(9.0f, juce::Font::bold));
+        m_gainValue.setJustificationType(juce::Justification::centredRight);
+        m_gainValue.setColour(juce::Label::textColourId, juce::Colour(Colors::TextOffWhite));
+        addAndMakeVisible(m_gainValue);
+        updateGainText();
+
+        if (apvts.getParameter(output::autoGainId) != nullptr) {
+            m_auto.setButtonText("AUTO");
+            m_auto.setColour(juce::ToggleButton::tickColourId, juce::Colour(Colors::MetallicGold));
+            m_auto.setTooltip("Auto gain: match the output's loudness to the input, so you hear the effect, not the level change");
+            m_autoAttach = std::make_unique<Apvts::ButtonAttachment>(apvts, output::autoGainId, m_auto);
+            m_auto.onStateChange = [this] { updateAutoText(); };
+            addAndMakeVisible(m_auto);
+            startTimerHz(10);
+        }
+    }
+
+    void resized() override {
+        auto b = getLocalBounds();
+        m_bypass.setBounds(b.removeFromLeft(58));
+        b.removeFromLeft(8);
+        if (m_autoAttach != nullptr) {
+            m_auto.setBounds(b.removeFromRight(58));
+            b.removeFromRight(8);
+        }
+        m_label.setBounds(b.removeFromLeft(26));
+        m_gainValue.setBounds(b.removeFromRight(50));
+        m_gain.setBounds(b);
+    }
+
+private:
+    void updateGainText() {
+        const double db = m_gain.getValue();
+        m_gainValue.setText((db > 0.05 ? "+" : "") + juce::String(db, 1) + " dB", juce::dontSendNotification);
+    }
+
+    void updateAutoText() {
+        if (!m_auto.getToggleState()) {
+            m_auto.setButtonText("AUTO");
+            return;
+        }
+        const float db = m_stage.getAppliedAutoGainDb();
+        m_auto.setButtonText(juce::String(db > 0.05f ? "+" : "") + juce::String(db, 1));
+    }
+
+    void timerCallback() override { updateAutoText(); }
+
+    const ff360::FF360_DSP_OutputStage& m_stage;
+
+    juce::ToggleButton m_bypass, m_auto; // drawn as pill toggles by FF360_LookAndFeel
+    juce::Slider m_gain;
+    juce::Label m_label, m_gainValue;
+
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> m_bypassAttach, m_autoAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> m_gainAttach;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OutputStrip)
+};
+
+} // namespace ff360_ui
+
+#endif

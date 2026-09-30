@@ -57,6 +57,7 @@ void testPlugin(const juce::String& name, const std::vector<ff360::Preset>& fact
     std::cout << name << "\n";
 
     Proc proc;
+    proc.setRateAndBufferSizeDetails(48000.0, 512); // as a host does before preparing
     proc.prepareToPlay(48000.0, 512);
     auto& apvts = proc.getApvts();
     auto& history = proc.getHistory();
@@ -174,15 +175,67 @@ void testPlugin(const juce::String& name, const std::vector<ff360::Preset>& fact
     check(!presets.isCurrentUserPreset(), "deleted preset is no longer current");
 
     // ---- Clipboard ----
-    edit(*mix, 0.6f);
-    presets.copyToClipboard();
-    edit(*mix, 0.1f);
-    check(presets.pasteFromClipboard(), "pastes its own preset");
+    // The Windows clipboard can be briefly locked by other apps (clipboard history, cloud sync),
+    // so give the round trip a few tries before calling it a failure
+    bool pasted = false;
+    for (int attempt = 0; attempt < 5 && !pasted; ++attempt) {
+        edit(*mix, 0.6f);
+        presets.copyToClipboard();
+        edit(*mix, 0.1f);
+        pasted = presets.pasteFromClipboard();
+        if (!pasted) juce::Thread::sleep(100);
+    }
+    check(pasted, "pastes its own preset");
     check(near(mix->getValue(), 0.6f), "paste applies the copied values");
+
+
+    // ---- Output stage in the plugin: host bypass, bypass null, finite output ----
+    check(apvts.getParameter("outGain") != nullptr, "has an output trim");
+    auto* bypass = apvts.getParameter("bypass");
+    check(bypass != nullptr && proc.getBypassParameter() == bypass, "host bypass maps to the bypass parameter");
+    if (bypass != nullptr) {
+        juce::AudioBuffer<float> buf(std::max(proc.getTotalNumInputChannels(), proc.getTotalNumOutputChannels()), 512);
+        juce::MidiBuffer midi;
+        juce::Random rng(42);
+        auto fillNoise = [&] {
+            buf.clear();
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < buf.getNumSamples(); ++i)
+                    buf.setSample(ch, i, (rng.nextFloat() * 2.0f - 1.0f) * 0.25f);
+        };
+
+        edit(*bypass, 1.0f);
+        presets.loadPreset(1);
+        check(bypass->getValue() > 0.5f, "loading a preset doesn't change bypass");
+
+        float maxDiff = 0.0f;
+        for (int block = 0; block < 4; ++block) {
+            fillNoise();
+            juce::AudioBuffer<float> input;
+            input.makeCopyOf(buf);
+            proc.processBlock(buf, midi);
+            if (block >= 1) // the first block holds the 10 ms fade
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < buf.getNumSamples(); ++i)
+                        maxDiff = std::max(maxDiff, std::abs(buf.getSample(ch, i) - input.getSample(ch, i)));
+        }
+        check(maxDiff == 0.0f, "bypassed output is the input, bit for bit (max diff " + juce::String(maxDiff) + ")");
+
+        edit(*bypass, 0.0f);
+        bool finite = true;
+        for (int block = 0; block < 100; ++block) {
+            fillNoise();
+            proc.processBlock(buf, midi);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < buf.getNumSamples(); ++i)
+                    finite = finite && std::isfinite(buf.getSample(ch, i));
+        }
+        check(finite, "processing stays finite");
+    }
 
     // ---- Editor ----
     std::unique_ptr<juce::AudioProcessorEditor> editor(proc.createEditor());
-    check(editor->getWidth() == 350 && editor->getHeight() == 676, "editor is 350 x 676");
+    check(editor->getWidth() == 350 && editor->getHeight() == 712, "editor is 350 x 712");
     auto snapshot = editor->createComponentSnapshot(editor->getLocalBounds(), true, 2.0f);
     if (snapshotDir != juce::File()) {
         auto file = snapshotDir.getChildFile(name.removeCharacters(" ") + ".png");
@@ -194,6 +247,88 @@ void testPlugin(const juce::String& name, const std::vector<ff360::Preset>& fact
     proc.releaseResources();
 }
 
+
+// ff360::FF360_DSP_OutputStage on its own, with a plain gain standing in for the effect
+void testOutputStage() {
+    currentPlugin = "OutputStage";
+    std::cout << "OutputStage\n";
+    using Stage = ff360::FF360_DSP_OutputStage;
+    constexpr double sr = 48000.0;
+    constexpr size_t n = 512;
+    juce::Random rng(7);
+    std::vector<float> inL(n), inR(n), L(n), R(n);
+
+    // Runs `blocks` blocks of noise at `level` through an "effect" of `effectGain`; returns out/in RMS in dB
+    auto run = [&](Stage& st, float effectGain, float level, const Stage::Settings& s, int blocks) {
+        double inSum = 0.0, outSum = 0.0;
+        for (int b = 0; b < blocks; ++b) {
+            for (size_t i = 0; i < n; ++i) {
+                inL[i] = (rng.nextFloat() * 2.0f - 1.0f) * level;
+                inR[i] = (rng.nextFloat() * 2.0f - 1.0f) * level;
+            }
+            st.captureDry(inL.data(), inR.data(), n);
+            for (size_t i = 0; i < n; ++i) { L[i] = inL[i] * effectGain; R[i] = inR[i] * effectGain; }
+            st.process(L.data(), R.data(), n, s);
+            if (b == blocks - 1)
+                for (size_t i = 0; i < n; ++i) {
+                    inSum += inL[i] * inL[i] + inR[i] * inR[i];
+                    outSum += L[i] * L[i] + R[i] * R[i];
+                }
+        }
+        return inSum > 0.0 ? 10.0 * std::log10(outSum / inSum) : 0.0;
+    };
+    const int secs = (int)(sr / n); // blocks per second
+
+    {
+        Stage st; st.prepare(sr, n);
+        Stage::Settings s; s.outputGainDb = 6.0f;
+        check(std::abs(run(st, 1.0f, 0.3f, s, 3) - 6.0) < 0.05, "trim +6 dB gives +6 dB");
+        s.outputGainDb = -12.0f;
+        check(std::abs(run(st, 1.0f, 0.3f, s, 3) + 12.0) < 0.05, "trim -12 dB gives -12 dB");
+    }
+    {
+        Stage st; st.prepare(sr, n);
+        Stage::Settings s; s.autoGain = true;
+        const double matched = run(st, 0.5f, 0.3f, s, 10 * secs); // effect is 6 dB quieter
+        check(std::abs(matched) < 0.3, "auto gain matches the input level (off by " + juce::String(matched, 2) + " dB)");
+        check(std::abs(st.getAppliedAutoGainDb() - 6.02f) < 0.3f, "auto gain applies about +6 dB");
+        run(st, 0.5f, 0.0f, s, 3 * secs); // input goes silent
+        check(std::abs(st.getAppliedAutoGainDb() - 6.02f) < 0.3f, "auto gain holds through silence");
+        s.outputGainDb = -3.0f;
+        check(std::abs(run(st, 0.5f, 0.3f, s, 3) + 3.0) < 0.3, "the trim still works on top of auto gain");
+        s.autoGain = false; s.outputGainDb = 0.0f;
+        check(std::abs(run(st, 0.5f, 0.3f, s, secs) + 6.02) < 0.1, "switching auto gain off removes it");
+    }
+    {
+        Stage st; st.prepare(sr, n);
+        Stage::Settings s; s.autoGain = true;
+        run(st, 0.01f, 0.3f, s, 20 * secs); // effect is 40 dB quieter
+        check(std::abs(st.getAppliedAutoGainDb() - 12.0f) < 0.1f, "auto gain is limited to +12 dB");
+    }
+    {
+        Stage st; st.prepare(sr, n);
+        Stage::Settings s; s.bypass = true;
+        run(st, 0.5f, 0.3f, s, 1);
+        const int fade = (int)std::ceil(0.010 * sr);
+        bool dryAfterFade = true;
+        for (int i = fade; i < (int)n; ++i)
+            dryAfterFade = dryAfterFade && L[(size_t)i] == inL[(size_t)i] && R[(size_t)i] == inR[(size_t)i];
+        check(dryAfterFade, "bypass reaches the dry signal within 10 ms");
+        check(L[0] != inL[0], "bypass fades rather than jumping");
+    }
+    {
+        // Mono: the host gives the same pointer for both channels; the gain must apply once
+        Stage st; st.prepare(sr, n);
+        Stage::Settings s; s.outputGainDb = 6.0f;
+        for (int b = 0; b < 3; ++b) {
+            for (size_t i = 0; i < n; ++i) inL[i] = (rng.nextFloat() * 2.0f - 1.0f) * 0.3f;
+            st.captureDry(inL.data(), inL.data(), n);
+            L = inL;
+            st.process(L.data(), L.data(), n, s);
+        }
+        check(std::abs(L[100] / inL[100] - 1.9953f) < 1.0e-3f, "mono gets the gain once, not twice");
+    }
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -205,6 +340,7 @@ int main(int argc, char* argv[]) {
         snapshotDir.createDirectory();
     }
 
+    testOutputStage();
     testPlugin<VHSPluginProcessor>("VHS", ff360::getVhsPresets(), snapshotDir);
     testPlugin<NeonChorusProcessor>("Neon Chorus", ff360::getNeonChorusPresets(), snapshotDir);
     testPlugin<MidnightReverbProcessor>("Midnight Reverb", ff360::getMidnightReverbPresets(), snapshotDir);

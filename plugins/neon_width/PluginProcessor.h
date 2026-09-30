@@ -9,6 +9,7 @@
 #if __has_include(<juce_audio_processors/juce_audio_processors.h>)
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "ff360_ui/PresetManager.h"
+#include "ff360_ui/OutputStrip.h"
 
 class NeonWidthProcessor : public juce::AudioProcessor {
 public:
@@ -38,6 +39,8 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState& getApvts() { return m_apvts; }
+    const ff360::FF360_DSP_OutputStage& getOutputStage() const { return m_outputStage; }
+    juce::AudioProcessorParameter* getBypassParameter() const override { return m_apvts.getParameter(ff360_ui::output::bypassId); }
     ff360_ui::EditHistory& getHistory() { return m_history; }
     ff360_ui::PresetManager& getPresetManager() { return m_presetManager; }
     ff360::FF360_DSP_StereoEngine& getStereoEngine() { return m_stereoEngine; }
@@ -57,6 +60,7 @@ private:
     ff360::FF360_DSP_StereoEngine m_stereoEngine;
     ff360::FF360_DSP_ParameterManager m_paramManager;
     ff360::FF360_DSP_MeteringBridge m_meteringBridge;
+    ff360::FF360_DSP_OutputStage m_outputStage; // auto gain, output trim, bypass
 
     mutable juce::SpinLock m_scopeLock;
     std::array<float, kScopeBufferSize> m_latestL{};

@@ -29,6 +29,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout VHSPluginProcessor::createPa
     makeFloatParam("outGain", "Output Gain", -24.0f, 24.0f, 0.0f, "dB");
     makeFloatParam("mix", "Mix", 0.0f, 100.0f, 100.0f);
 
+    // Output trim, auto gain and bypass (ff360::FF360_DSP_OutputStage)
+    ff360_ui::output::addParameters(params, true, false);
+
     return { params.begin(), params.end() };
 }
 
@@ -38,11 +41,12 @@ VHSPluginProcessor::VHSPluginProcessor()
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
       m_degradeMacro(ff360::FF360_DSP_MacroSystem::createVhsDegradeMacro()),
-      m_history(*this, {}, {}),
-      m_presetManager(m_apvts, m_history, "VHS", ff360::getVhsPresets(), {}) {
+      m_history(*this, {}, { "bypass" }),
+      m_presetManager(m_apvts, m_history, "VHS", ff360::getVhsPresets(), { "bypass" }) {
 }
 
 void VHSPluginProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
+    m_outputStage.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_tapeEngine.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_meteringBridge.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_paramManager.prepare(sampleRate);
@@ -59,6 +63,9 @@ void VHSPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     const int numChannels = buffer.getNumChannels();
 
     if (numChannels == 0 || numSamples == 0) return;
+
+    // Keep the input for bypass and auto gain
+    m_outputStage.captureDry(buffer.getReadPointer(0), buffer.getReadPointer(numChannels > 1 ? 1 : 0), static_cast<size_t>(numSamples));
 
     // Read and update parameters
     const float degradeVal = m_apvts.getRawParameterValue("degrade")->load() * 0.01f;
@@ -100,7 +107,7 @@ void VHSPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     }
 
     params.inputGainDb = m_apvts.getRawParameterValue("inGain")->load();
-    params.outputGainDb = m_apvts.getRawParameterValue("outGain")->load();
+    params.outputGainDb = 0.0f; // "outGain" is the post-mix output trim, applied by m_outputStage
     params.mix = m_apvts.getRawParameterValue("mix")->load() * 0.01f;
 
     m_tapeEngine.setParameters(params);
@@ -112,6 +119,7 @@ void VHSPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     m_tapeEngine.processStereo(left, right, static_cast<size_t>(numSamples));
 
     // Post-Phase-10 precision metering
+    m_outputStage.process(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readSettings(m_apvts));
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
 }
 

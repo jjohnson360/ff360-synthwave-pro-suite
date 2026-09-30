@@ -41,6 +41,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout NeonWidthProcessor::createPa
         juce::ParameterID{ "mix", 1 }, "Mix", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
+    // Output trim, auto gain and bypass (ff360::FF360_DSP_OutputStage)
+    ff360_ui::output::addParameters(params, true);
+
     return { params.begin(), params.end() };
 }
 
@@ -49,11 +52,12 @@ NeonWidthProcessor::NeonWidthProcessor()
                      .withInput("Input", juce::AudioChannelSet::stereo(), true)
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
-      m_history(*this, {}, {}),
-      m_presetManager(m_apvts, m_history, "Neon Width", ff360::getNeonWidthPresets(), {}) {
+      m_history(*this, {}, { "bypass" }),
+      m_presetManager(m_apvts, m_history, "Neon Width", ff360::getNeonWidthPresets(), { "bypass" }) {
 }
 
 void NeonWidthProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
+    m_outputStage.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_stereoEngine.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_meteringBridge.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_paramManager.prepare(sampleRate);
@@ -76,6 +80,9 @@ void NeonWidthProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
 
     if (numChannels == 0 || numSamples == 0) return;
 
+    // Keep the input for bypass and auto gain
+    m_outputStage.captureDry(buffer.getReadPointer(0), buffer.getReadPointer(numChannels > 1 ? 1 : 0), static_cast<size_t>(numSamples));
+
     ff360::StereoParameters params;
     params.microDelayMs = m_apvts.getRawParameterValue("microdelay")->load();
     params.haasWidth = m_apvts.getRawParameterValue("haas")->load() * 0.01f;
@@ -93,6 +100,7 @@ void NeonWidthProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     float* right = (numChannels > 1) ? buffer.getWritePointer(1) : buffer.getWritePointer(0);
 
     m_stereoEngine.processStereo(left, right, static_cast<size_t>(numSamples));
+    m_outputStage.process(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readSettings(m_apvts));
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
 
     // Capture a small sample block for the goniometer, under a spinlock so the

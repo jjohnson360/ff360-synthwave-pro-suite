@@ -50,6 +50,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout NightDriveProcessor::createP
         juce::ParameterID{ "scduck", 1 }, "Sidechain Duck", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 0.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
+    // Output trim, bypass (ff360::FF360_DSP_OutputStage)
+    ff360_ui::output::addParameters(params, false);
+
     return { params.begin(), params.end() };
 }
 
@@ -59,8 +62,8 @@ NightDriveProcessor::NightDriveProcessor()
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)
                      .withInput("Sidechain", juce::AudioChannelSet::stereo(), false)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
-      m_history(*this, {}, {}),
-      m_presetManager(m_apvts, m_history, "NightDrive", ff360::getNightDrivePresets(), {}) {
+      m_history(*this, {}, { "bypass" }),
+      m_presetManager(m_apvts, m_history, "NightDrive", ff360::getNightDrivePresets(), { "bypass" }) {
     updateScaleNotes(1); // Natural Minor default
 }
 
@@ -95,6 +98,7 @@ void NightDriveProcessor::updateScaleNotes(int scaleIndex) {
 }
 
 void NightDriveProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
+    m_outputStage.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_droneChorus.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_granularTexture.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_reverbWash.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
@@ -122,6 +126,9 @@ void NightDriveProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     const int numChannels = buffer.getNumChannels();
 
     if (numChannels == 0 || numSamples == 0) return;
+
+    // Keep the input for bypass and auto gain
+    m_outputStage.captureDry(buffer.getReadPointer(0), buffer.getReadPointer(numChannels > 1 ? 1 : 0), static_cast<size_t>(numSamples));
 
     // Detect ChordFlow MIDI / Chord messages
     for (const auto metadata : midiMessages) {
@@ -269,6 +276,7 @@ void NightDriveProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
         right[i] *= mixVal * duckGain;
     }
 
+    m_outputStage.process(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readSettings(m_apvts));
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
 }
 

@@ -5,12 +5,14 @@
 
 NeonTapeStopEditor::NeonTapeStopEditor(NeonTapeStopProcessor& p)
     : AudioProcessorEditor(&p), m_processor(p),
-      m_workflowBar(p.getHistory(), p.getPresetManager())
+      m_workflowBar(p.getHistory(), p.getPresetManager()),
+      m_outputStrip(p.getApvts(), p.getOutputStage())
 {
     setLookAndFeel(&m_lookAndFeel);
 
     addAndMakeVisible(m_workflowBar);
     m_workflowBar.attachKeyboardShortcuts(*this);
+    addAndMakeVisible(m_outputStrip);
 
     addAndMakeVisible(m_mainPanel);
     addAndMakeVisible(m_scene);
@@ -50,7 +52,7 @@ NeonTapeStopEditor::NeonTapeStopEditor(NeonTapeStopProcessor& p)
     addAndMakeVisible(m_mixSlider);
     addAndMakeVisible(m_mixLabel);
 
-    setSize(350, 676);
+    setSize(350, 712);
     startTimerHz(30);
 }
 
@@ -116,6 +118,8 @@ void NeonTapeStopEditor::resized() {
     bounds.removeFromTop(4);
     m_workflowBar.setBounds(bounds.removeFromTop(26));
     bounds.removeFromTop(6);
+    m_outputStrip.setBounds(bounds.removeFromBottom(28));
+    bounds.removeFromBottom(8);
     
     m_mainPanel.setBounds(bounds);
     auto inner = bounds.reduced(14);

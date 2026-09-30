@@ -43,6 +43,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout NeonChorusProcessor::createP
     params.push_back(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID{ "quad", 1 }, "Quad Chorus (4-Voice)", true));
 
+    // Output trim, auto gain and bypass (ff360::FF360_DSP_OutputStage)
+    ff360_ui::output::addParameters(params, true);
+
     return { params.begin(), params.end() };
 }
 
@@ -51,11 +54,12 @@ NeonChorusProcessor::NeonChorusProcessor()
                      .withInput("Input", juce::AudioChannelSet::stereo(), true)
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       m_apvts(*this, nullptr, "Parameters", createParameterLayout()),
-      m_history(*this, {}, {}),
-      m_presetManager(m_apvts, m_history, "Neon Chorus", ff360::getNeonChorusPresets(), {}) {
+      m_history(*this, {}, { "bypass" }),
+      m_presetManager(m_apvts, m_history, "Neon Chorus", ff360::getNeonChorusPresets(), { "bypass" }) {
 }
 
 void NeonChorusProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
+    m_outputStage.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_chorusEngine.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_meteringBridge.prepare(sampleRate, static_cast<size_t>(samplesPerBlock));
     m_paramManager.prepare(sampleRate);
@@ -72,6 +76,9 @@ void NeonChorusProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     const int numChannels = buffer.getNumChannels();
 
     if (numChannels == 0 || numSamples == 0) return;
+
+    // Keep the input for bypass and auto gain
+    m_outputStage.captureDry(buffer.getReadPointer(0), buffer.getReadPointer(numChannels > 1 ? 1 : 0), static_cast<size_t>(numSamples));
 
     ff360::ModulationParameters params;
     params.rateHz = m_apvts.getRawParameterValue("rate")->load();
@@ -93,6 +100,7 @@ void NeonChorusProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     float* right = (numChannels > 1) ? buffer.getWritePointer(1) : buffer.getWritePointer(0);
 
     m_chorusEngine.processStereo(left, right, static_cast<size_t>(numSamples));
+    m_outputStage.process(left, right, static_cast<size_t>(numSamples), ff360_ui::output::readSettings(m_apvts));
     m_meteringBridge.processStereo(left, right, static_cast<size_t>(numSamples));
 }
 
